@@ -1,6 +1,4 @@
-# agent/client.py
 from __future__ import annotations
-
 import json
 import socket
 import threading
@@ -86,25 +84,45 @@ client.call(
     }
 )
 
+
 client.call(
     "voiceover.start",
 )
 
+
+
+client.call("voiceover.goToWebContent")
+
+
+
 res = client.call(
-    "voiceover.next"
+    "voiceover.startInteracting"
 )
 
-# res = client.call(
-#     "voiceover.perform", {
-#         "command":"ACTIONS"
-#     }
-# )
-
 res = client.call(
-    "voiceover.type", {
-        "text":"hello!!"
+    "voiceover.startInteracting"
+)
+
+client.call("voiceover.rotor.open")
+client.call("voiceover.rotor.nextItem")
+res = client.call("daemonstate.snapshot")
+print(res)
+
+client.call("voiceover.rotor.previousItem")
+client.call("voiceover.rotor.nextCategory")
+client.call("voiceover.rotor.previousCategory")
+client.call(
+    "voiceover.rotor.find",
+    {
+        "text": "help"
     }
 )
+client.call("voiceover.escape")
+
+
+res = client.call("daemonstate.snapshot")
+print(res)
+
 
 client.call(
     "voiceover.stop",
