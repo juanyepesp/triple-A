@@ -34,11 +34,7 @@ const daemon_state = {
   voiceOverRunning: false,
   currentVoiceOverCursorDescription: null,
   voiceOverMode: null,
-  rotor: {
-    open: false,
-    category: null,
-    query: null,
-  },
+  // TODO maybe add a rotor information
 
   pageUrl: null,
   pageTitle: null,
@@ -231,9 +227,6 @@ const handlers = {
         voiceOverRunning: daemon_state.voiceOverRunning,
         voiceOverMode: daemon_state.voiceOverMode,
         currentVoiceOverCursorDescription: daemon_state.currentVoiceOverCursorDescription,
-      },
-      rotor: {
-        ...daemon_state.rotor,
       },
     }
 

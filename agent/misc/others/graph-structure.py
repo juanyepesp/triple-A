@@ -6,8 +6,6 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph.message import add_messages
 from langchain_core.tools import tool
 
-from other.client import GuidepupClient
-
 # ? this is a file where i test the graph structure, that it builds correctly
 
 # -----------------------------------------------------------

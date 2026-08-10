@@ -1,15 +1,25 @@
 from graph.build import build_graph
-# TODO this is an example of what the main file would look like
-# backend = TODO
-app = build_graph()
 
-result = app.invoke({
+app = build_graph()
+end_goal = "On this website, find the table for enrollment trends and describe it."
+url = "https://projects.accesscomputing.uw.edu/au/after.html"
+
+initial_state = {
     "messages": [],
-    "goal": "Find the privacy policy",
+    "goal": end_goal,
+    "initial_URL": url,
     "snapshot": {},
     "memory": [],
     "iteration": 0,
     "goal_reached": False,
     "action_plan": {},
     "final_summary": "",
-})
+    "execution_results": []
+}
+
+for event in app.stream(initial_state):
+    for node_name, output in event.items():
+        print(f"\n{'=' * 50}")
+        print(f"NODE: {node_name}")
+        print(f"{'=' * 50}")
+        print(output)

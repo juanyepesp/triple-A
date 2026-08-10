@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import json
 import socket
 import threading
@@ -6,14 +7,13 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 @dataclass
-class RpcError(Exception):
+class ClientError(Exception):
     code: int
     message: str
 
     def __str__(self) -> str:
         return f"{self.code}: {self.message}"
 
-# TODO este cliente debe tener una cola FIFO y un MUTEX para que no se manden muchos requests al tiempo
 
 class GuidepupClient:
     def __init__(self, path: str = "/tmp/guidepup.sock") -> None:
@@ -57,18 +57,15 @@ class GuidepupClient:
             while not data.endswith(b"\n"):
                 chunk = self.sock.recv(4096)
                 if not chunk:
-                    raise ConnectionError("Socket closed")
+                    return "Socket closed, all actions are unavailable."
                 data += chunk
 
             resp = json.loads(data.decode("utf-8").strip())
 
             if "error" in resp:
-                raise RpcError(resp["error"]["code"], resp["error"]["message"])
+                return {'ok': False, 'reason': f"ERROR {resp['error']['code']}: {resp['error']['message']}"}
 
             return resp["result"]
 
     def ping(self) -> Any:
         return self.call("ping")
-
-    def voiceover_next(self) -> Any:
-        return self.call("voiceover.next")
