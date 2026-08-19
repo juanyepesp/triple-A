@@ -3,7 +3,7 @@
 */recordings
 */screenshots
 */node_modules
-*/__pycache__
+**/__pycache__
 .DS_Store
 */venv
 */logs
