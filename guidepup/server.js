@@ -13,6 +13,8 @@ const sessionLogPath = path.join(
   process.cwd(),
   `logs/logs-${process.pid}-${Date.now()}.log`
 )
+const logsDirectory = path.join(process.cwd(), 'logs')
+fs.mkdirSync(logsDirectory, { recursive: true })
 const destination = pino.destination(sessionLogPath)
 const logger = pino(
   { name: 'guidepup-daemon' },
@@ -275,7 +277,7 @@ const handlers = {
 
   async "voiceover.start"() {
     await voiceOver.start({
-      capture: true
+      capture: "initial"
     });
     await refreshVoiceOverState('voiceover.start');
     return { ok: true };
