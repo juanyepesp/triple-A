@@ -1,30 +1,51 @@
 # Triple-A Accessibility Agent
 
-# How to install
+An accessibility agent that uses LangGraph, Playwright, and macOS VoiceOver to navigate a website.
 
-- Create a python venv and install all requirements.txt. On the root
+## Prerequisites
+
+- macOS with VoiceOver enabled
+- Python 3.11 or later
+- Node.js and npm
+- An `OPENAI_API_KEY` environment variable
+
+## Installation
+
+From the repository root:
+
 ```zsh
 cd agent
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-```
 
-- Install node and node packages. On the root
-```zsh
-cd guidepup
+cd ../guidepup
 npm install
 npx playwright install chromium
+```
+
+## Run
+
+Use two terminals from the repository root.
+
+**Terminal 1: start the Guidepup daemon**
+
+```zsh
+cd guidepup
 npm start
 ```
 
-# Usage
+This starts the RPC server at `/tmp/guidepup.sock`.
 
-Create two terminals. First initialise the RPC socket on the guidepup daemon. On the root
+**Terminal 2: start the Python agent**
 
+```zsh
+cd agent
+source venv/bin/activate
+python main.py
 ```
-cd guidepup
-node server.js
-```
 
-When Google Chrome for testing opens, you need to interrupt execution and directly add this keyboard shortcut. Using voiceover, navigate directly to the web content (that is until you hear "web content") and set the hotspot to 1. That is by pressing VO + shift + 1
+When the test Chrome window opens, pause the agent and configure the VoiceOver hotspot:
+
+1. Use VoiceOver to move to the web content until it announces “web content”.
+2. Set that location as hotspot 1 with `VO + Shift + 1`.

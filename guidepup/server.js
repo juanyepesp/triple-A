@@ -284,7 +284,7 @@ const handlers = {
   },
 
   async "voiceover.goToWebContent"() {
-    // ! For this command to work, you have to set the hot spot to the webcontent
+    // ! For this command to work properly, you have to set the hot spot to the webcontent
     const moveToNextHotspotCommand = {
       keyCode: MacOSKeyCodes.RightSquareBracket,
       modifiers: [MacOSModifiers.Control, MacOSModifiers.Option, MacOSModifiers.Shift],
