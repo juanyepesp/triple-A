@@ -1,4 +1,5 @@
 from graph.build import build_graph
+import pprint
 
 app = build_graph()
 end_goal = "On this website, find the table for enrollment trends and describe it."
@@ -22,4 +23,4 @@ for event in app.stream(initial_state):
         print(f"\n{'=' * 50}")
         print(f"NODE: {node_name}")
         print(f"{'=' * 50}")
-        print(output)
+        pprint(output)
