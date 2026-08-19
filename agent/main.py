@@ -1,5 +1,5 @@
 from graph.build import build_graph
-import pprint
+from pprint import pprint
 
 app = build_graph()
 end_goal = "On this website, find the table for enrollment trends and describe it."
