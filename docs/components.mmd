@@ -1,0 +1,30 @@
+flowchart TD
+    subgraph Python["Python Agent"]
+        LangGraph[LangGraph StateGraph]
+        Schema[Typed state schema]
+        Nodes[Nodes: bootstrap, snapshot, perception,\nevaluation, decision, action, report]
+    end
+
+    subgraph JS["Node.js Daemon"]
+        RPCServer[RPC handler]
+        StateStore[daemon_state single source of truth]
+        Guidepup[Guidepup / VoiceOver wrappers]
+        Playwright[Playwright Chromium]
+        Logger[pino logging]
+    end
+
+    subgraph OS["macOS Environment"]
+        VO[VoiceOver accessibility layer]
+        BrowserProcess[Browser process / page]
+        WebContent[Web content + DOM + ARIA tree]
+    end
+
+    LangGraph -->|sends RPC calls| RPCServer
+    RPCServer --> StateStore
+    RPCServer --> Guidepup
+    RPCServer --> Playwright
+    Guidepup --> VO
+    Playwright --> BrowserProcess
+    BrowserProcess --> WebContent
+    StateStore --> Logger
+    Nodes --> Schema

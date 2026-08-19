@@ -1,0 +1,35 @@
+sequenceDiagram
+    participant A as Python Agent
+    participant C as GuidepupClient
+    participant S as Node.js RPC Server
+    participant B as Playwright Browser
+    participant V as macOS VoiceOver
+    participant W as Web Page
+
+    A->>C: call("browser.start", { url })
+    C->>S: JSON-RPC request
+    S->>B: launch Chromium + open page
+    B->>W: navigate to URL
+    W-->>B: page load / DOM / accessibility tree
+    B-->>S: page events + title + snapshot
+    S-->>C: { ok: true }
+
+    A->>C: call("voiceover.start")
+    C->>S: JSON-RPC request
+    S->>V: start VoiceOver capture
+    V-->>S: spoken text + item state
+    S-->>C: ok
+
+    A->>C: call("voiceover.next")
+    C->>S: request
+    S->>V: next item / next command
+    V->>W: navigate accessibility focus
+    V-->>S: current spoken phrase + cursor info
+    S-->>C: ok
+
+    A->>C: call("daemonstate.snapshot")
+    C->>S: request
+    S-->>C: pageUrl, pageTitle, ariaSnapshot,\nvoiceOverInfo, screenshotPath, events
+    C-->>A: snapshot
+
+    A->>A: interpret snapshot + decide next action

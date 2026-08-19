@@ -1,0 +1,15 @@
+stateDiagram-v2
+    [*] --> bootstrap
+    bootstrap --> snapshot
+    snapshot --> perception
+    perception --> evaluation
+
+    evaluation --> decide_actions: goal not reached
+    evaluation --> report: goal reached
+
+    decide_actions --> decision
+    decision --> action
+    action --> snapshot
+
+    report --> stop
+    stop --> [*]

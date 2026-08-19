@@ -1,0 +1,11 @@
+flowchart TD
+    User[Human / Task Goal] --> Agent[Python Agent: LangGraph State Machine]
+    Agent -->|decides actions| RPC[JSON-RPC over Unix Domain Socket]
+    RPC --> Server[Node.js Guidepup Daemon]
+    Server --> Browser[Playwright Browser\nChromium]
+    Server --> VO[macOS VoiceOver]
+    Browser --> Web[Web Page / Accessibility Tree]
+    VO --> Web
+    Server --> State[SSOT Daemon State: URL, title, aria snapshot, VoiceOver state, screenshots, events]
+    State --> Agent
+    Server --> Logs[Logs + Event History]

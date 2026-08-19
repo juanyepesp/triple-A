@@ -1,0 +1,24 @@
+flowchart TD
+    subgraph Client["Python Client"]
+        C1["GuidepupClient.connect()"]
+        C2["GuidepupClient.call(method, params)"]
+        C3[JSON payload with jsonrpc,id,method,params]
+    end
+
+    subgraph IPC["Unix Domain Socket"]
+        S1[AF_UNIX SOCK_STREAM]
+        S2[request line\nnewline-delimited JSON]
+    end
+
+    subgraph Server["Node.js Server"]
+        H1["createServer()"]
+        H2[parse JSON]
+        H3[lookup handler by method]
+        H4[execute handler]
+        H5[commit daemon_state]
+        H6[respond with result or error]
+    end
+
+    C1 --> C2 --> C3 --> S1 --> H1
+    H1 --> H2 --> H3 --> H4 --> H5 --> H6
+    H6 -->|response to client| C2
