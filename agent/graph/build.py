@@ -1,36 +1,88 @@
 from langgraph.graph import StateGraph, START, END
+
 from state.schema import AgentState
-from graph.nodes import bootstrap, snapshot, perception, evaluation, decision, action, report, stop
+
+from graph.nodes import (
+    bootstrap,
+    snapshot,
+    perception,
+    evaluation,
+    normal_decision,
+    rotor_decision,
+    normal_tool_node,
+    rotor_tool_node,
+    report,
+    stop,
+)
+
+from graph.edges import (
+    route_after_evaluation,
+    route_mode,
+    route_after_decision,
+)
+
 
 def build_graph():
     graph = StateGraph(AgentState)
 
-    graph.add_node("node_bootstrap", lambda state: bootstrap(state))
-    graph.add_node("node_snapshot", lambda state: snapshot(state))
-    graph.add_node("node_perception", lambda state: perception(state))
-    graph.add_node("node_evaluation", lambda state: evaluation(state))
-    graph.add_node("node_decision", lambda state: decision(state))
-    graph.add_node("node_action", lambda state: action(state))
-    graph.add_node("node_report", lambda state: report(state))
-    graph.add_node("node_stop", lambda state: stop(state))
+    # Nodes
+    graph.add_node("bootstrap", bootstrap)
+    graph.add_node("snapshot", snapshot)
+    graph.add_node("perception", perception)
+    graph.add_node("evaluation", evaluation)
 
-    graph.add_edge(START, "node_bootstrap")
-    graph.add_edge("node_bootstrap", "node_snapshot")
-    graph.add_edge("node_snapshot", "node_perception")
-    graph.add_edge("node_perception", "node_evaluation")
+    graph.add_node("normal_decision", normal_decision)
+    graph.add_node("rotor_decision", rotor_decision)
 
+    graph.add_node("normal_tools", normal_tool_node)
+    graph.add_node("rotor_tools", rotor_tool_node)
+
+    graph.add_node("report", report)
+    graph.add_node("stop", stop)
+
+    # Startup
+    graph.add_edge(START, "bootstrap")
+    graph.add_edge("bootstrap", "snapshot")
+    graph.add_edge("snapshot", "perception")
+    graph.add_edge("perception", "evaluation")
+
+    # Decide what to do next
     graph.add_conditional_edges(
-        "node_evaluation",
-        lambda state: "decide_actions" if not state["evaluation"]["goal_reached"] else "report",
+        "evaluation",
+        route_after_evaluation,
         {
-            "decide_actions": "node_decision",
-            "report": "node_report",
+            "report": "report",
+            "normal": "normal_decision",
+            "rotor": "rotor_decision",
         },
     )
 
-    graph.add_edge("node_decision", "node_action")
-    graph.add_edge("node_action", "node_snapshot")
-    graph.add_edge("node_report", "node_stop")
-    graph.add_edge("node_stop", END)
+    # Normal mode
+    graph.add_conditional_edges(
+        "normal_decision",
+        route_after_decision,
+        {
+            "tools": "normal_tools",
+            "done": "snapshot",
+        },
+    )
+
+    graph.add_edge("normal_tools", "snapshot")
+
+    # Rotor mode
+    graph.add_conditional_edges(
+        "rotor_decision",
+        route_after_decision,
+        {
+            "tools": "rotor_tools",
+            "done": "snapshot",
+        },
+    )
+
+    graph.add_edge("rotor_tools", "snapshot")
+
+    # Finish
+    graph.add_edge("report", "stop")
+    graph.add_edge("stop", END)
 
     return graph.compile()

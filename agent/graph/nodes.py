@@ -1,10 +1,12 @@
-from state.schema import AgentState
-from tools import actions as guidepup
+from state.schema import AgentState, Perception, Evaluation
 from prompts.load import load_prompt
-from tools import actions
+from tools import actions as guidepup
+from tools.voiceover import normal_tools
+from tools.rotor import rotor_tools
+from state.parsers import parse_daemon_snapshot
 
 from langchain_openai import ChatOpenAI
-from state.schema import Perception, Evaluation, ActionPlan
+from langgraph.prebuilt import ToolNode
 
 model = ChatOpenAI(
     model="gpt-4.1-nano",
@@ -13,7 +15,8 @@ model = ChatOpenAI(
 
 perception_model = model.with_structured_output(Perception)
 evaluation_model = model.with_structured_output(Evaluation)
-decision_model = model.with_structured_output(ActionPlan)
+normal_tools_model = model.bind_tools(normal_tools) 
+rotor_tools_model = model.bind_tools(rotor_tools) 
 
 
 def bootstrap(state: AgentState)-> AgentState:
@@ -21,7 +24,6 @@ def bootstrap(state: AgentState)-> AgentState:
 
     state['goal_reached'] = 'not_reached'
     state["iteration"] = 0
-    state["messages"] = []
 
     try:
         guidepup.browser_start(
@@ -39,8 +41,11 @@ def bootstrap(state: AgentState)-> AgentState:
 
 
 def snapshot(state: AgentState)-> AgentState:
-    '''This node takes the snapshot of the current state.'''
-    state['snapshot'] = guidepup.snapshot() 
+    '''
+    This node takes the snapshot of the current state, determines if
+    rotor is on
+    '''
+    state['snapshot'] = parse_daemon_snapshot(guidepup.snapshot())
     return state
 
 def perception(state: AgentState)-> AgentState:
@@ -144,10 +149,6 @@ def evaluation(state: AgentState)-> AgentState:
 
     {state["perception"]}
 
-    Previous execution results:
-
-    {state["execution_results"]}
-
     Iteration:
 
     {state["iteration"]}
@@ -169,74 +170,75 @@ def evaluation(state: AgentState)-> AgentState:
     state["iteration"] += 1
 
     return state
-    
 
-def decision(state: AgentState)-> AgentState:
-    '''This node decides the set of actions to take. 
-    - Out of all the possible actions of screen reader, which are relevant in this scenario?. 
-    - Do we need more context? 
-    Output a structured next step or short action plan.
-    '''
-    # state['action_plan'] = 'Here are the set of actions to execute. We can use these []. Since we need more context, we can do these [].'
-
-    # LLM calls
-    # right brain
+def normal_decision(state: AgentState) -> AgentState:
 
     system_prompt = load_prompt("decision.md")
 
-    user_input = f"""
-    Goal:
-
-    {state["goal"]}
-
-    Current perception:
-
-    {state["perception"]}
-
-    Current evaluation:
-
-    {state["evaluation"]}
-
-    Previous execution results:
-
-    {state["execution_results"]}
-    """
-
-    result = decision_model.invoke([
+    response = normal_tools_model.invoke([
         {
             "role": "system",
             "content": system_prompt,
         },
         {
             "role": "user",
-            "content": user_input,
+            "content": f"""
+                Goal:
+                {state["goal"]}
+
+                Current perception:
+                {state["perception"]}
+
+                Current evaluation:
+                {state["evaluation"]}
+
+                Current VoiceOver mode:
+                {state["voiceover"]["mode"]}
+                """,
         },
     ])
 
-    state["action_plan"] = result
+    return {
+        "messages": [response]
+    }
 
-    return state
+def rotor_decision(state: AgentState) -> AgentState:
 
+    system_prompt = load_prompt("decision.md")
 
-def action(state: AgentState) -> AgentState:
-    '''This node executes the set of actions planned earlier'''
-    results = []
+    response = rotor_tools_model.invoke([
+        {
+            "role": "system",
+            "content": system_prompt,
+        },
+        {
+            "role": "user",
+            "content": f"""
+                Goal:
+                {state["goal"]}
 
-    for planned_action in state["action_plan"]["actions"]:
+                Current perception:
+                {state["perception"]}
 
-        result = actions.execute(planned_action)
+                Current evaluation:
+                {state["evaluation"]}
 
-        results.append({
-            "action": planned_action,
-            "result": result,
-        })
+                Current VoiceOver mode:
+                {state["voiceover"]["mode"]}
+                """,
+        },
+    ])
 
-    state["execution_results"] = results
+    return {
+        "messages": [response]
+    }
 
-    return state
+# Tool Nodes
+normal_tool_node = ToolNode(normal_tools)
+rotor_tool_node = ToolNode(rotor_tools)
+
 
 def stop(state: AgentState) -> AgentState:
-
     try:
         actions.voiceover_stop()
     finally:

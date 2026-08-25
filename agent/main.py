@@ -2,7 +2,8 @@ from graph.build import build_graph
 from pprint import pprint
 
 app = build_graph()
-end_goal = "On this website, find the table for enrollment trends and describe it."
+app.get_graph().draw_mermaid_png(output_file_path='graph.png')
+end_goal = "On this website, find the table for enrollment trends and describe the tend for English majors (detailed as ENG)."
 url = "https://projects.accesscomputing.uw.edu/au/after.html"
 
 initial_state = {
@@ -15,7 +16,6 @@ initial_state = {
     "goal_reached": False,
     "action_plan": {},
     "final_summary": "",
-    "execution_results": []
 }
 
 for event in app.stream(initial_state):

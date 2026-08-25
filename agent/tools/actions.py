@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any
 from .client import GuidepupClient
 
 client = GuidepupClient()
@@ -80,12 +80,8 @@ ACTION_REGISTRY = {
 
 
 def execute(action: dict):
-
     name = action["name"]
-
     if name not in ACTION_REGISTRY:
         raise ValueError(f"Unknown action: {name}")
-
     fn = ACTION_REGISTRY[name]
-
     return fn(**action.get("params", {}))

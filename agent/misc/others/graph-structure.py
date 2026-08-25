@@ -16,25 +16,6 @@ guidepup_client = None
 
 
 # -----------------------------------------------------------
-# MISC
-# -----------------------------------------------------------
-
-# TODO sin usar el RPC server, asumiendo todos los inputs:
-# crear el flow del agente, con mas o menos como se iria viendo cada cosa, que "entienda" donde esta, que tiene que hacer y como llegar ahi, simular todo el flow
-# tal vez tengo que crear las imagenes yo mismo
-
-
-# en el estado, tengo que tener una lista de todo lo que ha "dicho" el agente junto con los mensajes de prompt y tal vez human in the loop si los pongo
-
-# annotated:
-# email = Annotated[str, "this has to be a valid email format"]
-
-# sequence
-# adding new messages to a chat history
-
-
-
-# -----------------------------------------------------------
 # MODEL, STATE
 # -----------------------------------------------------------
 

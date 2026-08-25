@@ -6,7 +6,7 @@ from dataclasses import dataclass
 @dataclass
 class VoiceOverInfo:
     running: bool
-    mode: Literal["normal", "rotor", None]
+    mode: Literal["normal", "rotor"]
     cursor_description: str | None
 
 @dataclass
@@ -42,43 +42,16 @@ class Evaluation(TypedDict):
     evidence: list[str]
     blocked: bool
 
-class PlannedAction(TypedDict):
-    name: Literal[
-        "voiceover.next",
-        "voiceover.previous",
-        "voiceover.startInteracting",
-        "voiceover.stopInteracting",
-        "voiceover.escape",
-        "voiceover.rotor.open",
-        "voiceover.rotor.nextCategory",
-        "voiceover.rotor.previousCategory",
-        "voiceover.rotor.nextItem",
-        "voiceover.rotor.previousItem",
-        "voiceover.rotor.activate",
-    ]
-
-    params: dict = {}
-
-
-class ActionPlan(TypedDict):
-    reasoning: str
-    actions: list[PlannedAction]
-
-class ActionPlan(TypedDict):
-    reasoning: str
-    actions: list[PlannedAction]
-
 class AgentState(TypedDict):
+    # TODO needs to be reset every once in a while
     messages: Annotated[Sequence[BaseMessage], add_messages]
     goal: str # The ultimate goal to reach. "Go to this marketplace site and find the about us page, summarize the page."
     initial_URL: str
     snapshot: DaemonSnapshot # Comes from Guidepup
     perception: Perception # Output of the perception node
     evaluation: Evaluation # Output of the evaluation node
-    action_plan: ActionPlan # Output of the decision node
+
     memory: list[str] 
     iteration: int
     goal_reached: bool
     final_summary: str
-    execution_results: list[str]
-
