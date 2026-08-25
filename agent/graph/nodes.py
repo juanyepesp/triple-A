@@ -193,7 +193,7 @@ def normal_decision(state: AgentState) -> AgentState:
                 {state["evaluation"]}
 
                 Current VoiceOver mode:
-                {state["voiceover"]["mode"]}
+                {state["snapshot"].voiceover.mode}
                 """,
         },
     ])
@@ -224,7 +224,7 @@ def rotor_decision(state: AgentState) -> AgentState:
                 {state["evaluation"]}
 
                 Current VoiceOver mode:
-                {state["voiceover"]["mode"]}
+                {state["snapshot"].voiceover.mode}
                 """,
         },
     ])
