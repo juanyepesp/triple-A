@@ -1,7 +1,6 @@
 from state.schema import DaemonSnapshot, VoiceOverInfo
 
 def parse_daemon_snapshot(raw: dict) -> DaemonSnapshot:
-    print(raw)
     daemon = raw['daemon_state']
 
     voiceover_raw = daemon['voiceOverInfo']
