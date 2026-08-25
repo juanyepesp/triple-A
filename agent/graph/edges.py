@@ -19,7 +19,7 @@ def route_after_decision(state: AgentState):
 
 def route_mode(state: AgentState):
 
-    mode = state['snapshot']['voiceover']['mode']
+    mode = state['snapshot'].voiceover.mode
 
     if mode == "rotor":
         return "rotor"
@@ -49,7 +49,7 @@ def route_after_evaluation(state: AgentState):
     if state["evaluation"]["goal_reached"]:
         return "report"
 
-    mode = state['snapshot']['voiceover']['mode']
+    mode = state['snapshot'].voiceover.mode
 
     if mode == "rotor":
         return "rotor"
