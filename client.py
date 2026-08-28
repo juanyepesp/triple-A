@@ -5,7 +5,6 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Optional
 
-
 @dataclass
 class RpcError(Exception):
     code: int
