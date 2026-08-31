@@ -1,4 +1,4 @@
-from typing import TypedDict, Annotated, Sequence, Literal
+from typing import TypedDict, Annotated, NotRequired, Sequence, Literal
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 from dataclasses import dataclass
@@ -48,6 +48,9 @@ class AgentState(TypedDict):
     goal: str # The ultimate goal to reach. "Go to this marketplace site and find the about us page, summarize the page."
     initial_URL: str
     snapshot: DaemonSnapshot # Comes from Guidepup
+    screenshot_runtime_dir: NotRequired[str]
+    impairment: NotRequired[str]
+    vision: NotRequired[dict[str, object]]
     perception: Perception # Output of the perception node
     evaluation: Evaluation # Output of the evaluation node
 

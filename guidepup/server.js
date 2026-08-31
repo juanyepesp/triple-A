@@ -145,7 +145,7 @@ async function ensureBrowser() {
 async function refreshVoiceOverState(fromAction, parameters = null) {
   const lastSpokenPhrase = await voiceOver.lastSpokenPhrase().catch(() => null);
   const itemTextLog = await voiceOver.itemTextLog().catch(() => []);
-  const pageScreenshotPath = await Promise.resolve(`./screenshots/${crypto.randomUUID()}.jpeg`);
+  const pageScreenshotPath = await Promise.resolve(`.././screenshots/${crypto.randomUUID()}.jpeg`);
   await daemon_state.page.screenshot({ path: pageScreenshotPath });
   const mode = resolveVoiceOverMode(fromAction);
   // ? const cursorScreenshotPath = await voiceOver.takeCursorScreenshot(); 

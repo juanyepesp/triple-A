@@ -5,6 +5,7 @@ from state.schema import AgentState
 from graph.nodes import (
     bootstrap,
     snapshot,
+    vision,
     perception,
     evaluation,
     normal_decision,
@@ -28,6 +29,7 @@ def build_graph():
     # Nodes
     graph.add_node("bootstrap", bootstrap)
     graph.add_node("snapshot", snapshot)
+    graph.add_node("vision", vision)
     graph.add_node("perception", perception)
     graph.add_node("evaluation", evaluation)
 
@@ -43,7 +45,8 @@ def build_graph():
     # Startup
     graph.add_edge(START, "bootstrap")
     graph.add_edge("bootstrap", "snapshot")
-    graph.add_edge("snapshot", "perception")
+    graph.add_edge("snapshot", "vision")
+    graph.add_edge("vision", "perception")
     graph.add_edge("perception", "evaluation")
 
     # Decide what to do next

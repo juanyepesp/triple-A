@@ -13,6 +13,7 @@ fswatch -o "$SOURCE" | while read -r _; do
         --delete \
         --exclude='.git/' \
         --exclude='venv/' \
+        --exclude='screenshots/' \
         --exclude='.venv/' \
         --exclude='__pycache__/' \
         --exclude='.pytest_cache/' \
