@@ -75,4 +75,8 @@ Prefer the smallest action that meaningfully reduces uncertainty.
 Do not call a tool merely because it is available.
 
 
+# Constraints
+
+Do not leave the web context or web area. You are executing inside a virtual environment; but that does not mean you can leave the context of the playwright browser.
+
 <!-- TODO check -->

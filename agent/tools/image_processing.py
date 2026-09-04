@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import base64
 import hashlib
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -86,5 +87,50 @@ def encode_jpeg(image: Any) -> str:
         raise ValueError("OpenCV could not encode the transformed screenshot as JPEG.")
     payload = base64.b64encode(encoded).decode("ascii")
     return f"data:image/jpeg;base64,{payload}"
+
+
+def save_vision_report(
+    image: Any,
+    description: str,
+    output_dir: str | Path,
+    screenshot_path: str | Path,
+    impairment: str,
+    screenshot_hash: str,
+) -> Path:
+    """Save the transformed image and description as one self-contained HTML file."""
+    report_dir = Path(output_dir).expanduser()
+    report_dir.mkdir(parents=True, exist_ok=True)
+    screenshot_path = Path(screenshot_path)
+    report_path = report_dir / f"{screenshot_path.stem}-{screenshot_hash[:12]}.html"
+
+    image_data_uri = encode_jpeg(image)
+    escaped_description = escape(description).replace("\n", "<br>\n")
+    report_path.write_text(
+    f"""<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Vision inspection: {escape(screenshot_path.name)}</title>
+    <style>
+        body {{ font-family: sans-serif; margin: 2rem; max-width: 70rem; }}
+        img {{ display: block; max-width: 100%; height: auto; border: 1px solid #ccc; }}
+        .metadata {{ color: #555; }}
+        .description {{ white-space: normal; line-height: 1.5; }}
+    </style>
+</head>
+<body>
+    <h1>Vision inspection</h1>
+    <p class="metadata">Source: {escape(str(screenshot_path))}<br>
+    Impairment: {escape(impairment)}<br>
+    Screenshot hash: {escape(screenshot_hash)}</p>
+    <img src="{image_data_uri}" alt="Transformed screenshot">
+    <h2>Description</h2>
+    <p class="description">{escaped_description}</p>
+</body>
+</html>
+""",
+        encoding="utf-8",
+    )
+    return report_path
 
 

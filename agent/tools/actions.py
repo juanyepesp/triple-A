@@ -61,27 +61,3 @@ def voiceover_rotor_find( text: str) -> Any:
 
 def voiceover_rotor_activate() -> Any:
     return client.call("voiceover.rotor.activate")
-
-
-ACTION_REGISTRY = {
-    "voiceover.next": voiceover_next,
-    "voiceover.previous": voiceover_previous,
-    "voiceover.startInteracting": voiceover_start_interacting,
-    "voiceover.stopInteracting": voiceover_stop_interacting,
-    "voiceover.escape": voiceover_escape,
-
-    "voiceover.rotor.open": voiceover_rotor_open,
-    "voiceover.rotor.nextCategory": voiceover_rotor_next_category,
-    "voiceover.rotor.previousCategory": voiceover_rotor_previous_category,
-    "voiceover.rotor.nextItem": voiceover_rotor_next_item,
-    "voiceover.rotor.previousItem": voiceover_rotor_previous_item,
-    "voiceover.rotor.activate": voiceover_rotor_activate,
-}
-
-
-def execute(action: dict):
-    name = action["name"]
-    if name not in ACTION_REGISTRY:
-        raise ValueError(f"Unknown action: {name}")
-    fn = ACTION_REGISTRY[name]
-    return fn(**action.get("params", {}))

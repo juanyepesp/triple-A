@@ -1,15 +1,9 @@
-from state.schema import AgentState, Perception, Evaluation
+from state.schema import AgentState, Perception, Evaluation, Vision
 from prompts.load import load_prompt
 from tools import actions as guidepup
 from tools.voiceover import normal_tools
 from tools.rotor import rotor_tools
-from tools.image_processing import (
-    apply_impairment,
-    encode_jpeg,
-    image_changed,
-    image_hash,
-    load_screenshot,
-)
+from tools.image_processing import (apply_impairment, encode_jpeg, image_changed, image_hash, load_screenshot, save_vision_report)
 from state.parsers import parse_daemon_snapshot
 
 from langchain_openai import ChatOpenAI
@@ -20,7 +14,6 @@ model = ChatOpenAI(
     temperature=0,
 )
 
-vision_model = model
 perception_model = model.with_structured_output(Perception)
 evaluation_model = model.with_structured_output(Evaluation)
 normal_tools_model = model.bind_tools(normal_tools) 
@@ -54,6 +47,68 @@ def snapshot(state: AgentState)-> AgentState:
     TODO determines if rotor is on
     '''
     state['snapshot'] = parse_daemon_snapshot(guidepup.snapshot())
+    return state
+
+
+def vision(state: AgentState)-> AgentState:
+    '''
+    This node takes in the screenshot, applies the visual filter, and
+    sends the picture to an LLM for description.
+    '''
+    screenshot_path, image = load_screenshot(
+        state["snapshot"]["screenshot_path"],
+        state.get("screenshot_runtime_dir"),
+    )
+    current_hash = image_hash(image)
+    previous_hash = state.get("vision", {}).get("screenshot_hash")
+    impairment = state.get("impairment", "none")
+
+    if not image_changed(image, previous_hash):
+        return state
+
+    transformed_image = apply_impairment(image, impairment)
+    system_prompt = load_prompt("vision.md")
+    response = model.invoke([
+        {
+            "role": "system",
+            "content": system_prompt,
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Impairment simulation: {impairment} \nWebsite URL: {state['snapshot']['page_url']}",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": encode_jpeg(transformed_image),
+                        "detail": "low"},
+                },
+            ],
+        },
+    ])
+    
+
+    state["vision"] = Vision()
+    
+    {
+        "path": str(screenshot_path),
+        "screenshot_hash": current_hash,
+        "impairment": impairment,
+        "description": response['description'],
+    }
+    
+    save_vision_report(
+        transformed_image,
+        response.get('description'),
+        "vision_outputs",
+        screenshot_path,
+        impairment,
+        current_hash,
+    )
+    
     return state
 
 def perception(state: AgentState)-> AgentState:
@@ -93,7 +148,13 @@ def perception(state: AgentState)-> AgentState:
     Current daemon snapshot:
 
     {state["snapshot"]}
+    
+    Current vision description, with visual impairment {state['impairment']}:
+    
+    {state['vision']}
     """
+    
+    # result = "ok!"
 
     result = perception_model.invoke([
         {
@@ -110,54 +171,6 @@ def perception(state: AgentState)-> AgentState:
 
     return state
 
-def vision(state: AgentState)-> AgentState:
-    '''
-    This node takes in the screenshot, applies the visual filter, and
-    sends the picture to an LLM for description.
-    '''
-    screenshot_path, image = load_screenshot(
-        state["snapshot"].screenshot_path,
-        state.get("screenshot_runtime_dir"),
-    )
-    current_hash = image_hash(image)
-    previous_hash = state.get("vision", {}).get("screenshot_hash")
-    impairment = state.get("impairment", "none")
-
-    previous_impairment = state.get("vision", {}).get("impairment")
-    if not image_changed(image, previous_hash) and impairment == previous_impairment:
-        return state
-
-    transformed_image = apply_impairment(image, impairment)
-    response = vision_model.invoke([
-        {
-            "role": "system",
-            "content": "Describe the visible page and its important visual structure concisely.",
-        },
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": f"Impairment simulation: {impairment}",
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {"url": encode_jpeg(transformed_image)},
-                },
-            ],
-        },
-    ])
-
-    state["vision"] = {
-        "path": str(screenshot_path),
-        "screenshot_hash": current_hash,
-        "impairment": impairment,
-        "description": response.content,
-    }
-    
-    return state
-    
-    
 
 def evaluation(state: AgentState)-> AgentState:
     '''
@@ -210,6 +223,7 @@ def evaluation(state: AgentState)-> AgentState:
     {state["iteration"]}
     """
 
+    # result = "ok!"
     result = evaluation_model.invoke([
         {
             "role": "system",

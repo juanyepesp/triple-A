@@ -23,13 +23,17 @@ def render_active_node(active_node: str) -> None:
     print("  -> ".join(labels))
 
 
+def comparable(value):
+    return value.model_dump() if hasattr(value, "model_dump") else value
+
+
 def print_node_event(node_name: str, output: dict, previous_state: dict) -> bool:
     changed_state = {
         key: value
         for key, value in output.items()
-        if key not in previous_state or previous_state[key] != value
+        if key not in previous_state or previous_state[key] != comparable(value)
     }
-    previous_state.update({key: deepcopy(value) for key, value in output.items()})
+    previous_state.update({key: deepcopy(comparable(value)) for key, value in output.items()})
 
     if not changed_state:
         return False
@@ -37,8 +41,7 @@ def print_node_event(node_name: str, output: dict, previous_state: dict) -> bool
     print(f"\n{'=' * 50}")
     print(f"NODE: {node_name}")
     print(f"{'=' * 50}")
-    render_active_node(node_name)
-    pprint(changed_state)
+    pprint(changed_state) 
     for message in changed_state.get("messages", []):
         for tool_call in getattr(message, "tool_calls", []):
             print(f"ACTION: {tool_call['name']}({tool_call.get('args', {})})")
@@ -68,11 +71,12 @@ initial_state = {
     "goal_reached": False,
     "action_plan": {},
     "final_summary": "",
+    "impairment": "low_vision",
 }
 
 previous_state = {}
 
-for event in app.stream(initial_state):
+for event in app.stream(initial_state, stream_mode="updates"):
     for node_name, output in event.items():
         changed = print_node_event(node_name, output, previous_state)
         if args.step and changed:

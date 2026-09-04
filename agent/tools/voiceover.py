@@ -2,7 +2,7 @@ from langchain_core.tools import tool
 from tools import actions
 
 # TODO revisar las descripciones de texto, estas afectan el prompting
-
+# TODO ponerles los hotkeys para que identifique de lo que voiceover dice
 
 @tool
 def voiceover_next() -> str:
@@ -27,6 +27,11 @@ def voiceover_stop_interacting() -> str:
     """Leave the currently focused group or container."""
     return actions.voiceover_stop_interacting()
 
+@tool
+def voiceover_go_to_web_content() -> str:
+    """Hotkey to return to web content"""
+    return actions.voiceover_go_to_web_content()
+
 
 @tool
 def rotor_open() -> str:
@@ -38,5 +43,6 @@ normal_tools = [
     voiceover_previous,
     voiceover_start_interacting,
     voiceover_stop_interacting,
+    voiceover_go_to_web_content,
     rotor_open,
 ]
