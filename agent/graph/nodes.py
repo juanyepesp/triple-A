@@ -1,4 +1,4 @@
-from state.schema import AgentState, Perception, Evaluation, Vision
+from state.schema import AgentState, Perception, Evaluation
 from prompts.load import load_prompt
 from tools import actions as guidepup
 from tools.voiceover import normal_tools
@@ -18,7 +18,6 @@ perception_model = model.with_structured_output(Perception)
 evaluation_model = model.with_structured_output(Evaluation)
 normal_tools_model = model.bind_tools(normal_tools) 
 rotor_tools_model = model.bind_tools(rotor_tools) 
-
 
 def bootstrap(state: AgentState)-> AgentState:
     '''This node sets up the browser, the screen reader, makes sure everything works correctly'''
@@ -40,7 +39,6 @@ def bootstrap(state: AgentState)-> AgentState:
 
     return state
 
-
 def snapshot(state: AgentState)-> AgentState:
     '''
     This node takes the snapshot of the current state, 
@@ -48,7 +46,6 @@ def snapshot(state: AgentState)-> AgentState:
     '''
     state['snapshot'] = parse_daemon_snapshot(guidepup.snapshot())
     return state
-
 
 def vision(state: AgentState)-> AgentState:
     '''
@@ -90,19 +87,17 @@ def vision(state: AgentState)-> AgentState:
         },
     ])
     
-
-    # state["vision"] = TODO
+    description = response.content
     
-    {
+    state["vision"] =  {
         "path": str(screenshot_path),
         "screenshot_hash": current_hash,
-        "impairment": impairment,
-        "description": response['description'],
+        "description": description,
     }
     
     save_vision_report(
         transformed_image,
-        response.get('description'),
+        description,
         "vision_outputs",
         screenshot_path,
         impairment,
@@ -140,21 +135,31 @@ def perception(state: AgentState)-> AgentState:
 
     system_prompt = load_prompt("perception.md")
 
+    # user_input = f""" # TODO change this
+    #     Current goal:
+
+    #     {state["goal"]}
+
+    #     Current daemon snapshot:
+
+    #     {state["snapshot"]}
+        
+    #     Current vision description, with visual impairment {state['impairment']}:
+        
+    #     {state['vision']}
+    # """
+    
     user_input = f"""
-    Current goal:
-
-    {state["goal"]}
-
-    Current daemon snapshot:
-
-    {state["snapshot"]}
-    
-    Current vision description, with visual impairment {state['impairment']}:
-    
-    {state['vision']}
+        The ultimate goal to tackle: {state['goal']}
+        
+        VoiceOver information: {state['snapshot']['voiceover']}
+        
+        Page title: {state['snapshot']['page_title']}
+        Current URL: {state['snapshot']['page_url']}
+        
+        Page description with {state['impairment']} impairment: {state['vision']}
     """
     
-    # result = "ok!"
 
     result = perception_model.invoke([
         {
@@ -241,11 +246,10 @@ def evaluation(state: AgentState)-> AgentState:
 
     return state
 
-def normal_decision(state: AgentState) -> AgentState:
-
+def decision(state: AgentState) -> AgentState:
     system_prompt = load_prompt("decision.md")
 
-    response = normal_tools_model.invoke([
+    messages = [
         {
             "role": "system",
             "content": system_prompt,
@@ -264,40 +268,17 @@ def normal_decision(state: AgentState) -> AgentState:
 
                 Current VoiceOver mode:
                 {state["snapshot"].voiceover.mode}
-                """,
+            """,
         },
-    ])
+    ]
 
-    return {
-        "messages": [response]
-    }
+    messages.extend(state["messages"])
 
-def rotor_decision(state: AgentState) -> AgentState:
-
-    system_prompt = load_prompt("decision.md")
-
-    response = rotor_tools_model.invoke([
-        {
-            "role": "system",
-            "content": system_prompt,
-        },
-        {
-            "role": "user",
-            "content": f"""
-                Goal:
-                {state["goal"]}
-
-                Current perception:
-                {state["perception"]}
-
-                Current evaluation:
-                {state["evaluation"]}
-
-                Current VoiceOver mode:
-                {state["snapshot"].voiceover.mode}
-                """,
-        },
-    ])
+    response = (
+        rotor_tools_model
+        if state["snapshot"].voiceover.mode == "rotor"
+        else normal_tools_model
+    ).invoke(messages)
 
     return {
         "messages": [response]
@@ -353,4 +334,3 @@ def report(state: AgentState) -> AgentState:
     state["final_summary"] = result.content
 
     return state
-

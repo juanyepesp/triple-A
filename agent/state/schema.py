@@ -23,12 +23,11 @@ from langgraph.graph.message import add_messages
 
 class Vision(TypedDict):
     """
-    Structured output from the vision model
+    Structured output from the vision node, the model just gets the description
     """
     description: str
     path: str
     screenshot_hash: str
-    impairment: str
 
 class Perception(TypedDict):
     """
@@ -156,8 +155,7 @@ class AgentState(TypedDict):
     """
     Final State passed through each node
     """
-    # TODO needs to be reset every once in a while
-    messages: Annotated[Sequence[BaseMessage], add_messages]
+    messages: Annotated[Sequence[BaseMessage], add_messages] # TODO needs to be reset every once in a while
     goal: str # The ultimate goal to reach. "Go to this marketplace site and find the about us page, summarize the page."
     initial_URL: str
     snapshot: DaemonSnapshot # All that comes from Guidepup
@@ -171,5 +169,5 @@ class AgentState(TypedDict):
 
     memory: list[str] 
     iteration: int
-    goal_reached: bool
+    goal_reached: Literal['reached', 'not_reached']
     final_summary: str

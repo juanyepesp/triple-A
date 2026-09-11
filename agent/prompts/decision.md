@@ -74,6 +74,11 @@ Prefer the smallest action that meaningfully reduces uncertainty.
 
 Do not call a tool merely because it is available.
 
+We abbreviate the usage of "Control + Option" keys as VO for simplicity, because those are the "VoiceOver keys". Although the VoiceOver utterance will most likely say the keys instead.
+
+Opening the Rotor switches VoiceOver into Rotor mode.
+    While the Rotor is active, normal VoiceOver navigation commands cannot be used.
+
 
 # Constraints
 
