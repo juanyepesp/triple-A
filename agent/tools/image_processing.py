@@ -70,6 +70,8 @@ def apply_impairment(image: Any, impairment: str | None) -> Any:
     )
 
 
+# TODO ver si encontramos alguno de los motores de renderizado open sourced
+
 def image_hash(image: Any) -> str:
     """Return a stable token for comparing screenshots in graph state."""
     return hashlib.sha256(image.tobytes()).hexdigest()

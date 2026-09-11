@@ -91,7 +91,7 @@ def vision(state: AgentState)-> AgentState:
     ])
     
 
-    state["vision"] = Vision()
+    # state["vision"] = TODO
     
     {
         "path": str(screenshot_path),

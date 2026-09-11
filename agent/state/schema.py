@@ -79,7 +79,11 @@ class Perception(TypedDict):
     ]
     
     relevant_observations: Annotated[
-        
+        list[str],
+        ...,
+        (
+            "List important observations that may influence future reasoning. "
+        )
     ]
     
     
@@ -96,10 +100,30 @@ class Evaluation(TypedDict):
     Structured output from the evaluation model
     """
     goal_reached: bool
-    confidence: float
-    progress_status: str
-    evidence: list[str]
-    blocked: bool
+
+    progress_status: Annotated[
+        Literal['meaningful-progress', 'some-progress', 'stalled', 'moved-away-from-goal', 'blocked'],
+        ...,
+        (
+            "Describe the agent's current progress toward the goal. Explain "
+            "whether it is making meaningful progress, has made no progress, "
+            "is stalled, has moved away from the goal, or appears to have "
+            "reached a terminal/blocked state."
+        ),
+    ]
+
+    evidence: Annotated[
+        list[str],
+        ...,
+        (
+            "List the concrete observations from the current perception that "
+            "support the evaluation. Prefer specific evidence such as an "
+            "accessible name, heading, page region, form value, table content, "
+            "or VoiceOver state over vague statements."
+        ), # TODO no se como poner esto
+    ]
+    
+    # TODO how to choose between rotor and actions
     
     
 # Deterministic State

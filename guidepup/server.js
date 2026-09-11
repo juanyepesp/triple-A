@@ -5,10 +5,8 @@ const path = require('node:path')
 const pino = require('pino')
 const { chromium } = require('playwright')
 const { voiceOver, VoiceOverCommanderCommands, MacOSKeyCodes, MacOSModifiers } = require('@guidepup/guidepup')
-const { ok } = require('node:assert');
-const { CommanderCommands } = require('@guidepup/guidepup/lib/macOS/VoiceOver/CommanderCommands')
-const { describe } = require('node:test')
-const { VoiceOver } = require('@guidepup/guidepup/lib/macOS/VoiceOver/VoiceOver')
+
+
 const sessionLogPath = path.join(
   process.cwd(),
   `logs/logs-${process.pid}-${Date.now()}.log`
@@ -33,15 +31,19 @@ const daemon_state = {
   context: null,
   page: null,
 
-  voiceOverRunning: false,
-  currentVoiceOverCursorDescription: null,
-  voiceOverMode: null,
-  // TODO maybe add a rotor information
+  pageInfo: {
+    url: null,
+    title: null,
+    screenshotPath: null,
+    accessibilityTree: null,
+  },
 
-  pageUrl: null,
-  pageTitle: null,
-  pageScreenshotPath: null,
-  accessibilityTree: null,
+  voiceOver: {
+    running: false,
+    mode: null,
+    cursorDescription: null,
+  },
+
   ready: false,
   events: [],
   version: 0,
@@ -71,11 +73,23 @@ function commit(patch, event = null) {
   }
 }
 
+function buildSnapshot() {
+  return {
+    version: daemon_state.version,
+    ready: daemon_state.ready,
+    page: { ...daemon_state.pageInfo },
+    voiceOver: { ...daemon_state.voiceOver },
+  };
+}
+
 function bindPageEvents(page) {
   page.on("framenavigated", async () => {
     commit({
-      pageUrl: page.url(),
-      pageTitle: await page.title().catch(() => null),
+      pageInfo: {
+        ...daemon_state.pageInfo,
+        url: page.url(),
+        title: await page.title().catch(() => null),
+      },
     }, {
       fromAction: "browser.navigation",
       url: page.url(),
@@ -84,9 +98,12 @@ function bindPageEvents(page) {
 
   page.on("load", async () => {
     commit({
-      pageUrl: page.url(),
-      pageTitle: await page.title().catch(() => null),
-      accessibilityTree: await page.ariaSnapshot().catch(() => null)
+      pageInfo: {
+        ...daemon_state.pageInfo,
+        url: page.url(),
+        title: await page.title().catch(() => null),
+        accessibilityTree: await page.ariaSnapshot().catch(() => null),
+      },
     }, {
       fromAction: "browser.load",
       url: page.url(),
@@ -119,11 +136,19 @@ function resolveVoiceOverMode(fromAction) {
     return 'normal';
   }
 
-  return daemon_state.voiceOverMode;
+  return daemon_state.voiceOver.mode;
 }
 
 async function getVoiceOverCursorDescription() {
-  await voiceOver.perform(VoiceOverCommanderCommands.DESCRIBE_ITEM_IN_VOICEOVER_CURSOR).catch(() => null)
+  const repeatLastSpokenPhraseCommand = {
+    keyCode: MacOSKeyCodes.z,
+    modifiers: [MacOSModifiers.Control, MacOSModifiers.Option, MacOSModifiers],
+    description: "Repeat Last Spoken Phrase",
+    representation: "VO-Z"
+  }
+  await voiceOver.perform(repeatLastSpokenPhraseCommand).catch(() => null);
+
+  // await voiceOver.perform(VoiceOverCommanderCommands.DESCRIBE_ITEM_IN_VOICEOVER_CURSOR).catch(() => null);
   const itemDescription = await voiceOver.lastSpokenPhrase()
   return itemDescription
 }
@@ -148,22 +173,28 @@ async function refreshVoiceOverState(fromAction, parameters = null) {
   const pageScreenshotPath = await Promise.resolve(`.././screenshots/${crypto.randomUUID()}.jpeg`);
   await daemon_state.page.screenshot({ path: pageScreenshotPath });
   const mode = resolveVoiceOverMode(fromAction);
-  // ? const cursorScreenshotPath = await voiceOver.takeCursorScreenshot(); 
-  const inRotor = daemon_state.voiceOverMode === "rotor";
+  const nextRunningState =
+    fromAction == 'voiceover.start'
+      ? true
+      : fromAction == 'voiceover.stop'
+        ? false
+        : daemon_state.voiceOver.running;
+  const nextCursorDescription =
+    fromAction == 'voiceover.stop' || mode === 'rotor'
+      ? null
+      : await getVoiceOverCursorDescription();
 
   commit({
-    pageScreenshotPath,
-    voiceOverRunning:
-      fromAction == 'voiceover.start'
-        ? true
-        : fromAction == 'voiceover.stop'
-          ? false
-          : daemon_state.voiceOverRunning,
-    voiceOverMode: mode,    
-    currentVoiceOverCursorDescription:
-      fromAction == 'voiceover.stop' || mode === 'rotor'
-        ? null
-        : await getVoiceOverCursorDescription() 
+    pageInfo: {
+      ...daemon_state.pageInfo,
+      screenshotPath: pageScreenshotPath,
+    },
+    voiceOver: {
+      ...daemon_state.voiceOver,
+      running: nextRunningState,
+      mode,
+      cursorDescription: nextCursorDescription,
+    },
   }, {
     fromAction: fromAction,
     parameters: parameters,
@@ -175,7 +206,7 @@ async function refreshVoiceOverState(fromAction, parameters = null) {
 }
 
 function assertNotRotorMode(action) {
-  if (daemon_state.voiceOverMode === "rotor") {
+  if (daemon_state.voiceOver.mode === "rotor") {
     throw new Error(`${action} is unavailable while rotor is open`)
   }
 }
@@ -217,24 +248,9 @@ const handlers = {
   },
 
   async "daemonstate.snapshot"() {
-    const snapshot = {
-      version: daemon_state.version,
-      ready: daemon_state.ready,
-      pageUrl: daemon_state.pageUrl,
-      pageTitle: daemon_state.pageTitle,
-      accessibilityTree: daemon_state.accessibilityTree,
-      pageScreenshotPath: daemon_state.pageScreenshotPath,
-      events: [...daemon_state.events],
-      voiceOverInfo: {
-        voiceOverRunning: daemon_state.voiceOverRunning,
-        voiceOverMode: daemon_state.voiceOverMode,
-        currentVoiceOverCursorDescription: daemon_state.currentVoiceOverCursorDescription,
-      },
-    }
-
     return {
       ok: true,
-      daemon_state: snapshot
+      daemon_state: buildSnapshot(),
     }
   },
 
@@ -246,9 +262,12 @@ const handlers = {
       waitUntil: "load",
     });
     commit({
-      pageUrl: daemon_state.page.url(),
-      pageTitle: await daemon_state.page.title().catch(() => null),
       ready: true,
+      pageInfo: {
+        ...daemon_state.pageInfo,
+        url: daemon_state.page.url(),
+        title: await daemon_state.page.title().catch(() => null),
+      },
     }, {
       fromAction: "browser.start"
     })
@@ -258,9 +277,14 @@ const handlers = {
   async "browser.stop"() {
     await daemon_state.browser.close()
     commit({
-      pageUrl: null,
-      pageTitle: null,
       ready: false,
+      pageInfo: {
+        ...daemon_state.pageInfo,
+        url: null,
+        title: null,
+        accessibilityTree: null,
+        screenshotPath: null,
+      },
     }, {
       fromAction: "browser.stop"
     })
@@ -277,19 +301,24 @@ const handlers = {
 
   async "voiceover.start"() {
     await voiceOver.start({
-      capture: "initial"
+      capture: true
     });
+
+    await voiceOver.clearItemTextLog();
+    await voiceOver.clearSpokenPhraseLog();
+
     await refreshVoiceOverState('voiceover.start');
     return { ok: true };
   },
 
   async "voiceover.goToWebContent"() {
     // ! For this command to work properly, you have to set the hot spot to the webcontent
+    // refer to README.md on project root
     const moveToNextHotspotCommand = {
       keyCode: MacOSKeyCodes.RightSquareBracket,
       modifiers: [MacOSModifiers.Control, MacOSModifiers.Option, MacOSModifiers.Shift],
       description: "Move to next hot spot",
-      depresentation: "VO-}"
+      representation: "VO-Shift-}"
     }
     await voiceOver.perform(moveToNextHotspotCommand);
     await refreshVoiceOverState('voiceover.setup');
@@ -321,7 +350,7 @@ const handlers = {
   async "voiceover.startInteracting"({ }) {
     // entering a group, VO-Shift-DownArrow
     assertNotRotorMode("voiceover.startInteracting")
-    await voiceOver.perform(CommanderCommands.START_INTERACTING_WITH_ITEM);
+    await voiceOver.perform(voiceOver.commanderCommands.START_INTERACTING_WITH_ITEM);
     await refreshVoiceOverState('voiceover.startInteracting');
     return { ok: true };
   },
@@ -342,7 +371,7 @@ const handlers = {
   },
 
   async "voiceover.escape"() {
-    await voiceOver.perform(CommanderCommands.ESCAPE);
+    await voiceOver.perform(voiceOver.commanderCommands.ESCAPE);
     await refreshVoiceOverState('voiceover.escape');
     return { ok: true };
   },
@@ -362,7 +391,7 @@ const handlers = {
   },
 
   async "voiceover.rotor.open"() {
-    await voiceOver.perform(CommanderCommands.ROTOR);
+    await voiceOver.perform(voiceOver.commanderCommands.ROTOR);
     await refreshVoiceOverState('voiceover.rotor.open');
     return { ok: true };
   },
