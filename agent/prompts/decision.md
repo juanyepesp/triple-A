@@ -83,5 +83,3 @@ Opening the Rotor switches VoiceOver into Rotor mode.
 # Constraints
 
 Do not leave the web context or web area. You are executing inside a virtual environment; but that does not mean you can leave the context of the playwright browser.
-
-<!-- TODO check -->

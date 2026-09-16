@@ -22,7 +22,7 @@ rotor_tools_model = model.bind_tools(rotor_tools)
 def bootstrap(state: AgentState)-> AgentState:
     '''This node sets up the browser, the screen reader, makes sure everything works correctly'''
 
-    state['goal_reached'] = 'not_reached'
+    state['goal_reached'] = False
     state["iteration"] = 0
 
     try:
@@ -228,7 +228,6 @@ def evaluation(state: AgentState)-> AgentState:
     {state["iteration"]}
     """
 
-    # result = "ok!"
     result = evaluation_model.invoke([
         {
             "role": "system",
@@ -240,6 +239,8 @@ def evaluation(state: AgentState)-> AgentState:
         },
     ])
 
+    state['goal_reached'] = result['goal_reached']
+    
     state["evaluation"] = result
 
     state["iteration"] += 1
@@ -254,21 +255,22 @@ def decision(state: AgentState) -> AgentState:
             "role": "system",
             "content": system_prompt,
         },
+        *state["messages"],
         {
             "role": "user",
             "content": f"""
-                Goal:
-                {state["goal"]}
+    Goal:
+    {state["goal"]}
 
-                Current perception:
-                {state["perception"]}
+    Current perception:
+    {state["perception"]}
 
-                Current evaluation:
-                {state["evaluation"]}
+    Current evaluation:
+    {state["evaluation"]}
 
-                Current VoiceOver mode:
-                {state["snapshot"].voiceover.mode}
-            """,
+    Current VoiceOver mode:
+    {state["snapshot"]['voiceover']['mode']}
+    """,
         },
     ]
 
@@ -276,9 +278,16 @@ def decision(state: AgentState) -> AgentState:
 
     response = (
         rotor_tools_model
-        if state["snapshot"].voiceover.mode == "rotor"
+        if state["snapshot"]['voiceover']['mode'] == "rotor"
         else normal_tools_model
     ).invoke(messages)
+    
+    print("\n=== DECISION RAW RESPONSE ===")
+    print(response)
+    print("TOOL CALLS:", response.tool_calls)
+    print("CONTENT:", response.content)
+    print("INVALID TOOL CALLS:", response.invalid_tool_calls)
+    print("FINISH REASON:", response.response_metadata.get("finish_reason"))
 
     return {
         "messages": [response]

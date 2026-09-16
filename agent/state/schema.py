@@ -35,10 +35,25 @@ class Perception(TypedDict):
     """
 
     element_role : Annotated[
-        str,
+        Literal[
+            "web content",
+            "heading",
+            "link",
+            "table",
+            "list",
+            "button",
+            "form control",
+            "text field",
+            "search field",
+            "image",
+            "landmark",
+            "frame",
+            "text",
+            "unknown",
+        ], # TODO
         ...,
         (
-            "Usually detailed at the beggining of the cursor description,"
+            "Usually detailed at the beggining of the VO cursor_description,"
             "It is the role of the current element. Most commonly,"
             "link, heading, table, paragraph, landmark, form control, text,"
             "list, button, checkbox, image, frame, navigation, text box"
@@ -72,7 +87,9 @@ class Perception(TypedDict):
         ...,
         (
             "A list of the available action from the element,"
-            "provided by the from the cursor description."
+            "provided by the from the cursor description. Usually announced"
+            "at the end, with the literal commands, such as: "
+            "To exit this group, press Control-Option-Shift-Up Arrow"
         ) # TODO maybe few shot examples?
         
     ]
@@ -169,5 +186,5 @@ class AgentState(TypedDict):
 
     memory: list[str] 
     iteration: int
-    goal_reached: Literal['reached', 'not_reached']
+    goal_reached: bool
     final_summary: str

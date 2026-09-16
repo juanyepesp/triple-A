@@ -102,7 +102,7 @@ function bindPageEvents(page) {
         ...daemon_state.pageInfo,
         url: page.url(),
         title: await page.title().catch(() => null),
-        accessibilityTree: await page.ariaSnapshot().catch(() => null),
+        accessibilityTree: await page.ariaSnapshot({mode: 'ai'}).catch(() => null),
       },
     }, {
       fromAction: "browser.load",
@@ -523,7 +523,17 @@ server.listen(socket_path, () => {
   console.log(`GUIDEPUP INFO: RPC daemon listening on ${socket_path}`)
 })
 
+async function stopVoiceOverOnShutdown() {
+  try {
+    await voiceOver.stop()
+  } catch (err) {
+    logger.error({ err }, "Failed to stop VoiceOver during shutdown")
+  }
+}
+
 process.on("SIGINT", async () => {
+  await stopVoiceOverOnShutdown()
+
   server.close(() => {
     try {
       if (fs.existsSync(socket_path)) {
@@ -533,6 +543,6 @@ process.on("SIGINT", async () => {
       console.error("GUIDEPUP ERROR: Socket was not unlinked correctly")
       process.exit(1)
     }
-    process.exit(0);
+    process.exit(0)
   })
 })
