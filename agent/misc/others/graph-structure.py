@@ -12,7 +12,7 @@ from langchain_core.tools import tool
 # GLOBAL VARIABLES
 # -----------------------------------------------------------
 
-guidepup_client = None
+guidecore_client = None
 
 
 # -----------------------------------------------------------
@@ -73,15 +73,15 @@ def bootstrap(state: AgentState)-> AgentState:
     # state['snapshot'] = {}
     # state['iteration'] = 0
     
-    global guidepup_client 
-    guidepup_client = GuidepupClient()
-    guidepup_client.call(
+    global guidecore_client 
+    guidecore_client = GuidepupClient()
+    guidecore_client.call(
         "browser.start",
         {
             'url': 'https://projects.accesscomputing.uw.edu/au/after.html'
         }
     )
-    guidepup_client.call("voiceover.start")
+    guidecore_client.call("voiceover.start")
 
     return state
 
@@ -89,7 +89,7 @@ def snapshot(state: AgentState)-> AgentState:
     '''This node takes the snapshot of the current state.'''
     # Snapshot: Fetch current browser state with visual impairment filter, fetch screen reader utterances
     # logic for getting the snapshot
-    res = guidepup_client.call("daemonstate.snapshot") # TODO convert this object into something the state can read
+    res = guidecore_client.call("daemonstate.snapshot") # TODO convert this object into something the state can read
 
     return state
 
@@ -159,8 +159,8 @@ def action(state: AgentState) -> AgentState:
 def stop(state: AgentState) -> AgentState:
     '''This node stops the browser and screen reader'''
     # RCP calls
-    guidepup_client.call("voiceover.stop")
-    guidepup_client.call("browser.stop")
+    guidecore_client.call("voiceover.stop")
+    guidecore_client.call("browser.stop")
     return state
 
 def report(state: AgentState) -> AgentState:

@@ -15,7 +15,7 @@ class RpcError(Exception):
 
 
 class GuidepupClient:
-    def __init__(self, path: str = "/tmp/guidepup.sock") -> None:
+    def __init__(self, path: str = "/tmp/guidecore.sock") -> None:
         self.path = path
         self.sock: Optional[socket.socket] = None
         self.lock = threading.Lock()
@@ -75,52 +75,53 @@ class GuidepupClient:
 
 
 client = GuidepupClient()
+print('a')
 client.ping()
+print('b')
+
 client.call(
     "browser.start",
     {
         'url': 'https://projects.accesscomputing.uw.edu/au/after.html'
     }
 )
+print('c')
+
 
 
 client.call(
     "voiceover.start",
 )
+print('d')
+
 
 
 
 client.call("voiceover.goToWebContent")
+print('e')
 
 
 
 res = client.call(
     "voiceover.startInteracting"
 )
+print('f')
+
 
 res = client.call(
     "voiceover.startInteracting"
 )
-
-client.call("voiceover.rotor.open")
-client.call("voiceover.rotor.nextItem")
-res = client.call("daemonstate.snapshot")
-print(res)
-
-client.call("voiceover.rotor.previousItem")
-client.call("voiceover.rotor.nextCategory")
-client.call("voiceover.rotor.previousCategory")
-client.call(
-    "voiceover.rotor.find",
-    {
-        "text": "help"
-    }
-)
-client.call("voiceover.escape")
+print('g')
 
 
-res = client.call("daemonstate.snapshot")
-print(res)
+client.call("voiceover.next")
+print('h')
+
+snap = client.call("daemonstate.snapshot")
+print('i', snap)
+
+# client.call("voiceover.next")
+# client.call("voiceover.next")
 
 
 client.call(

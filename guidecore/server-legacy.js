@@ -1,19 +1,19 @@
-const net = require('node:net')
-const fs = require('node:fs')
-const crypto = require('crypto')
-const path = require('node:path')
-const pino = require('pino')
-const { chromium } = require('playwright')
-const { voiceOver, MacOSKeyCodes, MacOSModifiers } = require('@guidepup/guidepup')
+import { createServer } from 'node:net'
+import { mkdirSync, existsSync, unlinkSync } from 'node:fs'
+import { randomUUID } from 'crypto'
+import { join } from 'node:path'
+import pino, { destination as _destination } from 'pino'
+import { chromium } from 'playwright'
+import { voiceOver, MacOSKeyCodes, MacOSModifiers } from '@guidepup/guidepup'
 
 
-const sessionLogPath = path.join(
+const sessionLogPath = join(
   process.cwd(),
   `logs/logs-${process.pid}-${Date.now()}.log`
 )
-const logsDirectory = path.join(process.cwd(), 'logs')
-fs.mkdirSync(logsDirectory, { recursive: true })
-const destination = pino.destination(sessionLogPath)
+const logsDirectory = join(process.cwd(), 'logs')
+mkdirSync(logsDirectory, { recursive: true })
+const destination = _destination(sessionLogPath)
 const logger = pino(
   { name: 'guidecore-daemon' },
   destination
@@ -170,7 +170,7 @@ async function ensureBrowser() {
 async function refreshVoiceOverState(fromAction, parameters = null) {
   const lastSpokenPhrase = await voiceOver.lastSpokenPhrase().catch(() => null);
   const itemTextLog = await voiceOver.itemTextLog().catch(() => []);
-  const pageScreenshotPath = await Promise.resolve(`.././screenshots/${crypto.randomUUID()}.jpeg`);
+  const pageScreenshotPath = await Promise.resolve(`.././screenshots/${randomUUID()}.jpeg`);
   await daemon_state.page.screenshot({ path: pageScreenshotPath });
   const mode = resolveVoiceOverMode(fromAction);
   const nextRunningState =
@@ -236,8 +236,8 @@ async function typeVoiceOverText(text) {
 // They update the state to keep a single unified source of truth.
 // -----------------------------------------------------------
 
-if (fs.existsSync(socket_path)) {
-  fs.unlinkSync(socket_path); // if there is a socket path linked already, unlink
+if (existsSync(socket_path)) {
+  unlinkSync(socket_path); // if there is a socket path linked already, unlink
 }
 
 const handlers = {
@@ -446,7 +446,7 @@ function writeMessage(socket, msg) {
   socket.write(JSON.stringify(msg) + "\n");
 }
 
-const server = net.createServer((socket) => {
+const server = createServer((socket) => {
   socket.setEncoding("utf8");
   let buffer = "";
 
@@ -520,7 +520,7 @@ const server = net.createServer((socket) => {
 });
 
 server.listen(socket_path, () => {
-  console.log(`GUIDEPUP INFO: RPC daemon listening on ${socket_path}`)
+  console.log(`GUIDECORE INFO: RPC daemon listening on ${socket_path}`)
 })
 
 async function stopVoiceOverOnShutdown() {
@@ -536,8 +536,8 @@ process.on("SIGINT", async () => {
 
   server.close(() => {
     try {
-      if (fs.existsSync(socket_path)) {
-        fs.unlinkSync(socket_path)
+      if (existsSync(socket_path)) {
+        unlinkSync(socket_path)
       }
     } catch {
       console.error("GUIDEPUP ERROR: Socket was not unlinked correctly")

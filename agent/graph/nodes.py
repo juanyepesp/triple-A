@@ -1,6 +1,6 @@
 from state.schema import AgentState, Perception, Evaluation
 from prompts.load import load_prompt
-from tools import actions as guidepup
+from tools import actions as guidecore
 from tools.voiceover import normal_tools
 from tools.rotor import rotor_tools
 from tools.image_processing import (apply_impairment, encode_jpeg, image_changed, image_hash, load_screenshot, save_vision_report)
@@ -26,11 +26,11 @@ def bootstrap(state: AgentState)-> AgentState:
     state["iteration"] = 0
 
     try:
-        guidepup.browser_start(
+        guidecore.browser_start(
             url=state['initial_URL']
         )
-        guidepup.voiceover_start()
-        guidepup.voiceover_go_to_web_content()
+        guidecore.voiceover_start()
+        guidecore.voiceover_go_to_web_content()
 
     except Exception as e:
         raise RuntimeError(
@@ -44,7 +44,7 @@ def snapshot(state: AgentState)-> AgentState:
     This node takes the snapshot of the current state, 
     TODO determines if rotor is on
     '''
-    state['snapshot'] = parse_daemon_snapshot(guidepup.snapshot())
+    state['snapshot'] = parse_daemon_snapshot(guidecore.snapshot())
     return state
 
 def vision(state: AgentState)-> AgentState:
@@ -300,9 +300,9 @@ rotor_tool_node = ToolNode(rotor_tools)
 
 def stop(state: AgentState) -> AgentState:
     try:
-        guidepup.voiceover_stop()
+        guidecore.voiceover_stop()
     finally:
-        guidepup.browser_stop()
+        guidecore.browser_stop()
 
     return state
 

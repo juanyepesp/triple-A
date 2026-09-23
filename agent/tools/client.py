@@ -16,7 +16,7 @@ class ClientError(Exception):
 
 
 class GuidepupClient:
-    def __init__(self, path: str = "/tmp/guidepup.sock") -> None:
+    def __init__(self, path: str = "/tmp/guidecore.sock") -> None:
         self.path = path
         self.sock: Optional[socket.socket] = None
         self.lock = threading.Lock()

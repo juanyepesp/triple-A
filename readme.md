@@ -1,6 +1,8 @@
 # Triple-A Accessibility Agent
 
-An accessibility agent that uses LangGraph, Playwright, and macOS VoiceOver to navigate a website.
+A multimodal accessibility agent that uses a screen reader to navigate a website.
+
+<!-- TODO maybe add a logo or more branding -->
 
 ## Prerequisites
 
@@ -8,6 +10,12 @@ An accessibility agent that uses LangGraph, Playwright, and macOS VoiceOver to n
 - Python 3.11 or later
 - Node.js and npm
 - An `OPENAI_API_KEY` environment variable
+- `Guidecore` module (lives inside the repository, for now)
+
+
+> [!NOTE]
+> **Guidecore** is a node project that is implemented also as a part of this project. Right now, it lives inside the repository, but it may be de-coupled in the future, and extended to a screen-reader testing suite. It controls VoiceOver using a library named Guidepup, while orchestrating the runtime using Playwright.
+
 
 ## Installation
 
@@ -19,7 +27,7 @@ python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-cd ../guidepup
+cd ../guidecore
 npm install
 npx playwright install chromium
 ```
@@ -28,14 +36,13 @@ npx playwright install chromium
 
 Use two terminals from the repository root.
 
-**Terminal 1: start the Guidepup daemon**
-
+**Terminal 1: start the Guidecore daemon**
 ```zsh
-cd guidepup
+cd guidecore
 npm start
 ```
 
-This starts the RPC server at `/tmp/guidepup.sock`.
+This starts the RPC server at `/tmp/guidecore.sock`.
 
 **Terminal 2: start the Python agent**
 
@@ -49,6 +56,7 @@ When the test Chrome window opens, pause the agent and configure the VoiceOver h
 
 1. Use VoiceOver to move to the web content until it announces “web content”.
 2. Set that location as hotspot 1 with `VO + Shift + 1`.
+
 
 ## Recommendations
 
