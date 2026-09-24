@@ -13,7 +13,7 @@
   "dependencies": {
     "pino": "^10.3.1",
     "playwright": "^1.61.1",
-    "@guidepup/guidepup": "^0.28.1",
+    "@guidepup/guidepup": "^0.28.1"
   },
   "devDependencies": {
     "@guidepup/guidepup": "^0.28.1",

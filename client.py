@@ -75,9 +75,9 @@ class GuidepupClient:
 
 
 client = GuidepupClient()
-print('a')
+
 client.ping()
-print('b')
+
 
 client.call(
     "browser.start",
@@ -85,49 +85,49 @@ client.call(
         'url': 'https://projects.accesscomputing.uw.edu/au/after.html'
     }
 )
-print('c')
 
 
 
 client.call(
     "voiceover.start",
 )
-print('d')
-
-
-
 
 client.call("voiceover.goToWebContent")
-print('e')
-
-
-
-res = client.call(
-    "voiceover.startInteracting"
-)
-print('f')
 
 
 res = client.call(
     "voiceover.startInteracting"
 )
-print('g')
 
-
-client.call("voiceover.next")
-print('h')
-
-snap = client.call("daemonstate.snapshot")
-print('i', snap)
-
-# client.call("voiceover.next")
-# client.call("voiceover.next")
-
-
-client.call(
-    "voiceover.stop",
+res = client.call(
+    "voiceover.next"
 )
 
-client.call(
-    "browser.stop",
+res = client.call(
+    "browser.viewportLocation"
 )
+
+# res = client.call( 
+#     "voiceover.startInteracting"
+# )
+
+# HOLA
+
+
+# client.call("voiceover.next")
+# print('h')
+
+# snap = client.call("daemonstate.snapshot")
+# print('i', snap)
+
+# # client.call("voiceover.next")
+# # client.call("voiceover.next")
+
+
+# client.call(
+#     "voiceover.stop",
+# )
+
+# client.call(
+#     "browser.stop",
+# )

@@ -9,17 +9,7 @@ import createVoiceOverService from "./services/voiceover.js";
 import createHandlers from "./handlers/index.js";
 import createRpcServer from "./rpc/server.js";
 
-
-// -----------------------------------------------------------
-// CONFIG
-// -----------------------------------------------------------
-
 const socketPath = "/tmp/guidecore.sock";
-
-
-// -----------------------------------------------------------
-// LOGGER
-// -----------------------------------------------------------
 
 const sessionLogPath = join(
   process.cwd(),
@@ -45,11 +35,7 @@ const logger = pino(
   destination
 );
 
-
-// -----------------------------------------------------------
-// STATE
-// -----------------------------------------------------------
-
+// TODO maybe this way of declarating state is not ideal for maintaining consistency
 const {
   daemonState,
   commit,
@@ -66,21 +52,14 @@ const {
 const browserService =
   createBrowserService({
     daemonState,
-    commit,
-    logger,
+    commit
   });
 
 const voiceOverService =
   createVoiceOverService({
     daemonState,
-    commit,
-    logger,
+    commit
   });
-
-
-// -----------------------------------------------------------
-// HANDLERS
-// -----------------------------------------------------------
 
 const handlers =
   createHandlers({
@@ -90,11 +69,6 @@ const handlers =
     voiceOverService,
   });
 
-
-// -----------------------------------------------------------
-// RPC SERVER
-// -----------------------------------------------------------
-
 const rpcServer =
   createRpcServer({
     socketPath,
@@ -103,22 +77,12 @@ const rpcServer =
   });
 
 
-// -----------------------------------------------------------
-// START
-// -----------------------------------------------------------
-
 async function start() {
   await rpcServer.start();
-
   console.log(
     `GUIDECORE INFO: RPC daemon listening on ${socketPath}`
   );
 }
-
-
-// -----------------------------------------------------------
-// SHUTDOWN
-// -----------------------------------------------------------
 
 async function shutdown() {
   try {

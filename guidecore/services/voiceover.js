@@ -243,6 +243,7 @@ function createVoiceOverService({
     await refreshState("voiceover.setup");
   }
 
+  
   return {
     start,
     stop,

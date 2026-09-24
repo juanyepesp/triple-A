@@ -6,6 +6,11 @@ import pino, { destination as _destination } from 'pino'
 import { chromium } from 'playwright'
 import { voiceOver, MacOSKeyCodes, MacOSModifiers } from '@guidepup/guidepup'
 
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+
 
 const sessionLogPath = join(
   process.cwd(),
@@ -102,7 +107,7 @@ function bindPageEvents(page) {
         ...daemon_state.pageInfo,
         url: page.url(),
         title: await page.title().catch(() => null),
-        accessibilityTree: await page.ariaSnapshot({mode: 'ai', boxes: true}).catch(() => null),
+        accessibilityTree: await page.ariaSnapshot({ mode: 'ai', boxes: true }).catch(() => null),
       },
     }, {
       fromAction: "browser.load",
@@ -138,6 +143,22 @@ function resolveVoiceOverMode(fromAction) {
 
   return daemon_state.voiceOver.mode;
 }
+
+async function getVoiceOverCursorBounds() {
+  const script = `
+tell application "VoiceOver"
+    return bounds of vo cursor
+end tell
+`;
+
+  const { stdout } = await execFileAsync(
+    "/usr/bin/osascript",
+    ["-e", script]
+  );
+
+  return stdout.trim();
+}
+
 
 async function getVoiceOverCursorDescription() {
   const repeatLastSpokenPhraseCommand = {
@@ -274,6 +295,26 @@ const handlers = {
     return { ok: true };
   },
 
+  async "browser.viewportLocation"() {
+    const viewport = await daemon_state.page.evaluate(() => ({
+      screenX: window.screenX,
+      screenY: window.screenY,
+      devicePixelRatio: window.devicePixelRatio,
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
+    }));
+
+    console.log('viewport')
+    console.log(viewport)
+
+    let bounds = await getVoiceOverCursorBounds()
+    console.log('voiceover')
+    console.log(bounds)
+
+
+    return { ok: true, viewport: viewport };
+  },
+
   async "browser.stop"() {
     await daemon_state.browser.close()
     commit({
@@ -294,7 +335,7 @@ const handlers = {
   // BROWSER ACTIONS
   async "browser.aom"() {
     const snapshot = await daemon_state.page.ariaSnapshot();
-    return snapshot
+    return { ok: true, snapshot: snapshot }
   },
 
   // VOICEOVER LIFECYCLE
