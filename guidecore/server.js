@@ -159,6 +159,52 @@ end tell
   return stdout.trim();
 }
 
+function compareBoxes(a, b) {
+  const centerA = {
+    x: a.x + a.width / 2,
+    y: a.y + a.height / 2,
+  };
+
+  const centerB = {
+    x: b.x + b.width / 2,
+    y: b.y + b.height / 2,
+  };
+
+  const centerDistance = Math.hypot(
+    centerA.x - centerB.x,
+    centerA.y - centerB.y
+  );
+
+  const left = Math.max(a.x, b.x);
+  const top = Math.max(a.y, b.y);
+  const right = Math.min(
+    a.x + a.width,
+    b.x + b.width
+  );
+  const bottom = Math.min(
+    a.y + a.height,
+    b.y + b.height
+  );
+
+  const intersectionWidth = Math.max(0, right - left);
+  const intersectionHeight = Math.max(0, bottom - top);
+  const intersection =
+    intersectionWidth * intersectionHeight;
+
+  const areaA = a.width * a.height;
+  const areaB = b.width * b.height;
+
+  const union =
+    areaA + areaB - intersection;
+
+  return {
+    centerDistance,
+    iou: union > 0 ? intersection / union : 0,
+    widthDifference: Math.abs(a.width - b.width),
+    heightDifference: Math.abs(a.height - b.height),
+  };
+}
+
 
 async function getVoiceOverCursorDescription() {
   const repeatLastSpokenPhraseCommand = {
@@ -303,16 +349,13 @@ const handlers = {
       innerWidth: window.innerWidth,
       innerHeight: window.innerHeight,
     }));
+    // TODO compare the boxes
+    return {ok: true, playwright: viewport};
+  },
 
-    console.log('viewport')
-    console.log(viewport)
-
+  async "voiceover.cursorLocation"(){
     let bounds = await getVoiceOverCursorBounds()
-    console.log('voiceover')
-    console.log(bounds)
-
-
-    return { ok: true, viewport: viewport };
+    return {ok: true, VOCursorLocation: bounds}
   },
 
   async "browser.stop"() {
@@ -334,7 +377,10 @@ const handlers = {
 
   // BROWSER ACTIONS
   async "browser.aom"() {
-    const snapshot = await daemon_state.page.ariaSnapshot();
+    const snapshot = await daemon_state.page.ariaSnapshot(({
+                mode: "ai",
+                boxes: true,
+              }));
     return { ok: true, snapshot: snapshot }
   },
 

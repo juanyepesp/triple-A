@@ -92,42 +92,173 @@ client.call(
     "voiceover.start",
 )
 
+# AOM primero
+res = client.call("browser.aom")
+print('AOM:')
+print(res['snapshot'])
+
+
+
+# # viewport bounds
+# res = client.call(
+#     "browser.viewportLocation"
+# )
+# print('Viewport Bounds')
+# print(res['playwright'])
+
+
+# accion
 client.call("voiceover.goToWebContent")
+print('\nGO TO WEB CONTENT')
+res = client.call("browser.aom")
+print('AOM:')
+print(res['snapshot'])
 
 
+# # snapshot
+# res = client.call("daemonstate.snapshot")
+# print('--------------------------------------------------')
+# print(res['daemon_state']['voiceOver']['cursorDescription'])
+
+# # bounds
+# res = client.call(
+#     "voiceover.cursorLocation"
+# )
+# print(res)
+
+
+# accion
 res = client.call(
     "voiceover.startInteracting"
 )
+print('\nSTART INTERACTING')
+res = client.call("browser.aom")
+print('AOM:')
+print(res['snapshot'])
 
+
+
+# # snapshot
+# res = client.call("daemonstate.snapshot")
+# print('--------------------------------------------------')
+# print(res['daemon_state']['voiceOver']['cursorDescription'])
+
+# # bounds
+# res = client.call(
+#     "voiceover.cursorLocation"
+# )
+# print(res)
+
+
+# accion
 res = client.call(
     "voiceover.next"
 )
+print('\nNEXT')
+res = client.call("browser.aom")
+print('AOM:')
+print(res['snapshot'])
 
+
+
+# accion
 res = client.call(
-    "browser.viewportLocation"
+    "voiceover.next"
 )
+print('\nNEXT')
+res = client.call("browser.aom")
+print('AOM:')
+print(res['snapshot'])
+
+
+
+# accion
+res = client.call(
+    "voiceover.next"
+)
+print('\nNEXT')
+res = client.call("browser.aom")
+print('AOM:')
+print(res['snapshot'])
+
+
+
+# accion
+res = client.call(
+    "voiceover.next"
+)
+print('\nNEXT')
+res = client.call("browser.aom")
+print('AOM:')
+print(res['snapshot'])
+
+
+
+# accion
+res = client.call(
+    "voiceover.next"
+)
+print('\nNEXT')
+res = client.call("browser.aom")
+print('AOM:')
+print(res['snapshot'])
+
+
+
+# accion
+res = client.call(
+    "voiceover.next"
+)
+print('\nNEXT')
+res = client.call("browser.aom")
+print('AOM:')
+print(res['snapshot'])
+
+
+
+# accion
+res = client.call(
+    "voiceover.next"
+)
+print('\nNEXT')
+res = client.call("browser.aom")
+print('AOM:')
+print(res['snapshot'])
+
+
+
+# # snapshot
+# res = client.call("daemonstate.snapshot")
+# print('--------------------------------------------------')
+# print(res['daemon_state']['voiceOver']['cursorDescription'])
+
+# # bounds
+# res = client.call(
+#     "voiceover.cursorLocation"
+# )
+# print(res)
 
 # res = client.call( 
 #     "voiceover.startInteracting"
 # )
 
-# HOLA
+# # HOLA
 
-
-# client.call("voiceover.next")
-# print('h')
-
-# snap = client.call("daemonstate.snapshot")
-# print('i', snap)
 
 # # client.call("voiceover.next")
-# # client.call("voiceover.next")
+# # print('h')
+
+# # snap = client.call("daemonstate.snapshot")
+# # print('i', snap)
+
+# # # client.call("voiceover.next")
+# # # client.call("voiceover.next")
 
 
-# client.call(
-#     "voiceover.stop",
-# )
+# # client.call(
+# #     "voiceover.stop",
+# # )
 
-# client.call(
-#     "browser.stop",
-# )
+# # client.call(
+# #     "browser.stop",
+# # )
