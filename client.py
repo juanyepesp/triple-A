@@ -4,6 +4,7 @@ import socket
 import threading
 from dataclasses import dataclass
 from typing import Any, Optional
+from pprint import pprint
 
 @dataclass
 class RpcError(Exception):
@@ -82,7 +83,7 @@ client.ping()
 client.call(
     "browser.start",
     {
-        'url': 'https://projects.accesscomputing.uw.edu/au/after.html'
+        'url': 'https://playwright.dev/docs/api/class-elementhandle'
     }
 )
 
@@ -93,9 +94,10 @@ client.call(
 )
 
 # AOM primero
-res = client.call("browser.aom")
-print('AOM:')
-print(res['snapshot'])
+# res = client.call("browser.activeNodes")
+# print('\nactiveNodes')
+# pprint(res['elements'])
+# input("continue?")
 
 
 
@@ -110,15 +112,16 @@ print(res['snapshot'])
 # accion
 client.call("voiceover.goToWebContent")
 print('\nGO TO WEB CONTENT')
-res = client.call("browser.aom")
-print('AOM:')
-print(res['snapshot'])
+# res = client.call("browser.activeNodes")
+# print('\nactiveNodes')
+# pprint(res['elements'])
+input("continue?")
 
 
 # # snapshot
 # res = client.call("daemonstate.snapshot")
 # print('--------------------------------------------------')
-# print(res['daemon_state']['voiceOver']['cursorDescription'])
+# print('\nVO utterance:', res['daemon_state']['voiceOver']['cursorDescription'])
 
 # # bounds
 # res = client.call(
@@ -132,16 +135,17 @@ res = client.call(
     "voiceover.startInteracting"
 )
 print('\nSTART INTERACTING')
-res = client.call("browser.aom")
-print('AOM:')
-print(res['snapshot'])
+# res = client.call("browser.activeNodes")
+# print('\nactiveNodes')
+# pprint(res['elements'])
+input("continue?")
 
 
 
 # # snapshot
 # res = client.call("daemonstate.snapshot")
 # print('--------------------------------------------------')
-# print(res['daemon_state']['voiceOver']['cursorDescription'])
+# print('\nVO utterance:', res['daemon_state']['voiceOver']['cursorDescription'])
 
 # # bounds
 # res = client.call(
@@ -149,100 +153,18 @@ print(res['snapshot'])
 # )
 # print(res)
 
-
+while True:
 # accion
-res = client.call(
-    "voiceover.next"
-)
-print('\nNEXT')
-res = client.call("browser.aom")
-print('AOM:')
-print(res['snapshot'])
-
-
-
-# accion
-res = client.call(
-    "voiceover.next"
-)
-print('\nNEXT')
-res = client.call("browser.aom")
-print('AOM:')
-print(res['snapshot'])
-
-
-
-# accion
-res = client.call(
-    "voiceover.next"
-)
-print('\nNEXT')
-res = client.call("browser.aom")
-print('AOM:')
-print(res['snapshot'])
-
-
-
-# accion
-res = client.call(
-    "voiceover.next"
-)
-print('\nNEXT')
-res = client.call("browser.aom")
-print('AOM:')
-print(res['snapshot'])
-
-
-
-# accion
-res = client.call(
-    "voiceover.next"
-)
-print('\nNEXT')
-res = client.call("browser.aom")
-print('AOM:')
-print(res['snapshot'])
-
-
-
-# accion
-res = client.call(
-    "voiceover.next"
-)
-print('\nNEXT')
-res = client.call("browser.aom")
-print('AOM:')
-print(res['snapshot'])
-
-
-
-# accion
-res = client.call(
-    "voiceover.next"
-)
-print('\nNEXT')
-res = client.call("browser.aom")
-print('AOM:')
-print(res['snapshot'])
-
-
-
-# # snapshot
-# res = client.call("daemonstate.snapshot")
-# print('--------------------------------------------------')
-# print(res['daemon_state']['voiceOver']['cursorDescription'])
-
-# # bounds
-# res = client.call(
-#     "voiceover.cursorLocation"
-# )
-# print(res)
-
-# res = client.call( 
-#     "voiceover.startInteracting"
-# )
-
-# # HOLA
+    res = client.call(
+        "voiceover.next"
+    )
+    print('\nNEXT')
+    res = client.call("daemonstate.snapshot")
+    print('\nVO utterance:', res['daemon_state']['voiceOver']['cursorDescription'])
+    res = client.call("browser.activeNodes")
+    print('\nactiveNodes')
+    pprint(res['elements'])
+    input("continue?")
 
 
 # # client.call("voiceover.next")

@@ -1,6 +1,7 @@
 import { createServer } from 'node:net'
 import { mkdirSync, existsSync, unlinkSync } from 'node:fs'
 import { randomUUID } from 'crypto'
+import YAML from 'yaml'
 import { join } from 'node:path'
 import pino, { destination as _destination } from 'pino'
 import { chromium } from 'playwright'
@@ -79,6 +80,7 @@ function commit(patch, event = null) {
 }
 
 function buildSnapshot() {
+  // TODO this is what's sent to the agent, this is the single source of truth.
   return {
     version: daemon_state.version,
     ready: daemon_state.ready,
@@ -159,50 +161,31 @@ end tell
   return stdout.trim();
 }
 
-function compareBoxes(a, b) {
-  const centerA = {
-    x: a.x + a.width / 2,
-    y: a.y + a.height / 2,
-  };
+function findNodesWhereFlagIsTrue(tree, flag) {
+  const results = [];
 
-  const centerB = {
-    x: b.x + b.width / 2,
-    y: b.y + b.height / 2,
-  };
+  function visit(node) {
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
 
-  const centerDistance = Math.hypot(
-    centerA.x - centerB.x,
-    centerA.y - centerB.y
-  );
+    if (!node || typeof node !== "object") {
+      return;
+    }
 
-  const left = Math.max(a.x, b.x);
-  const top = Math.max(a.y, b.y);
-  const right = Math.min(
-    a.x + a.width,
-    b.x + b.width
-  );
-  const bottom = Math.min(
-    a.y + a.height,
-    b.y + b.height
-  );
+    if (node[flag] === true) {
+      results.push(node);
+    }
 
-  const intersectionWidth = Math.max(0, right - left);
-  const intersectionHeight = Math.max(0, bottom - top);
-  const intersection =
-    intersectionWidth * intersectionHeight;
+    for (const child of node.children ?? []) {
+      visit(child);
+    }
+  }
 
-  const areaA = a.width * a.height;
-  const areaB = b.width * b.height;
+  visit(tree);
 
-  const union =
-    areaA + areaB - intersection;
-
-  return {
-    centerDistance,
-    iou: union > 0 ? intersection / union : 0,
-    widthDifference: Math.abs(a.width - b.width),
-    heightDifference: Math.abs(a.height - b.height),
-  };
+  return results;
 }
 
 
@@ -376,12 +359,28 @@ const handlers = {
   },
 
   // BROWSER ACTIONS
-  async "browser.aom"() {
-    const snapshot = await daemon_state.page.ariaSnapshot(({
+  async "browser.ariaSnapshot"() {
+    const snapshot = await daemon_state.page.ariaSnapshotJSON(({
                 mode: "ai",
                 boxes: true,
               }));
     return { ok: true, snapshot: snapshot }
+  },
+
+  async "browser.activeNodes"() {
+    const snapshot = await daemon_state.page.ariaSnapshotJSON(({
+                mode: "ai",
+                boxes: true,
+              }));
+
+    const activeNodes = findNodesWhereFlagIsTrue(snapshot, 'active');
+    const pressedNodes = findNodesWhereFlagIsTrue(snapshot, 'pressed');
+    const selectedNodes = findNodesWhereFlagIsTrue(snapshot, 'selected');
+    const checkedNodes = findNodesWhereFlagIsTrue(snapshot, 'checked');
+    const expandedNodes = findNodesWhereFlagIsTrue(snapshot, 'expanded');
+    const levelNodes = findNodesWhereFlagIsTrue(snapshot, 'level');
+
+    return { ok: true, elements: [activeNodes, pressedNodes, selectedNodes, checkedNodes, expandedNodes, levelNodes] }
   },
 
   // VOICEOVER LIFECYCLE
