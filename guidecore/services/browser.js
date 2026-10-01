@@ -1,43 +1,80 @@
 import { chromium } from "playwright";
 
-function createBrowserService({ daemonState, commit }) {
+function findNodesWhereFlagIsTrue(tree, flag) {
+  const results = [];
+
+  function visit(node) {
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+
+    if (!node || typeof node !== "object") {
+      return;
+    }
+
+    if (node[flag] === true) {
+      results.push(node);
+    }
+
+    for (const child of node.children ?? []) {
+      visit(child);
+    }
+  }
+
+  visit(tree);
+  return results;
+}
+
+export function createBrowserService({ daemonState, commit, logger }) {
+  let pageEventQueue = Promise.resolve();
+
   function bindPageEvents(page) {
+    function enqueuePageEvent(task) {
+      pageEventQueue = pageEventQueue
+        .then(task)
+        .catch((err) => {
+          logger.error({ err }, "Browser event handling failed");
+        });
+    }
+
     page.on("framenavigated", async () => {
-      commit(
-        {
-          pageInfo: {
-            ...daemonState.pageInfo,
-            url: page.url(),
-            title: await page.title().catch(() => null),
+      enqueuePageEvent(async () => {
+        commit(
+          {
+            pageInfo: {
+              ...daemonState.pageInfo,
+              url: page.url(),
+              title: await page.title().catch(() => null),
+            },
           },
-        },
-        {
-          fromAction: "browser.navigation",
-          url: page.url(),
-        }
-      );
+          {
+            fromAction: "browser.navigation",
+            url: page.url(),
+          },
+        );
+      });
     });
 
     page.on("load", async () => {
-      commit(
-        {
-          pageInfo: {
-            ...daemonState.pageInfo,
-            url: page.url(),
-            title: await page.title().catch(() => null),
-            accessibilityTree: await page
-              .ariaSnapshot({
-                mode: "ai",
-                boxes: true,
-              })
-              .catch(() => null),
+      enqueuePageEvent(async () => {
+        commit(
+          {
+            pageInfo: {
+              ...daemonState.pageInfo,
+              url: page.url(),
+              title: await page.title().catch(() => null),
+              accessibilityTree: await page
+                .ariaSnapshot({ mode: "ai", boxes: true })
+                .catch(() => null),
+            },
           },
-        },
-        {
-          fromAction: "browser.load",
-          url: page.url(),
-        }
-      );
+          {
+            fromAction: "browser.load",
+            url: page.url(),
+          },
+        );
+      });
     });
 
     page.on("close", () => {
@@ -48,9 +85,7 @@ function createBrowserService({ daemonState, commit }) {
           browser: null,
           ready: false,
         },
-        {
-          fromAction: "browser.closed",
-        }
+        { fromAction: "browser.closed" },
       );
     });
   }
@@ -60,27 +95,20 @@ function createBrowserService({ daemonState, commit }) {
       return;
     }
 
-    const browser = await chromium.launch({
+    daemonState.browser = await chromium.launch({
       headless: false,
       args: ["--start-maximized"],
     });
-
-    const context = await browser.newContext();
-    const page = await context.newPage();
-
-    daemonState.browser = browser;
-    daemonState.context = context;
-    daemonState.page = page;
-
-    bindPageEvents(page);
+    daemonState.context = await daemonState.browser.newContext();
+    daemonState.page = await daemonState.context.newPage();
+    bindPageEvents(daemonState.page);
   }
 
   async function start(url) {
     await ensureBrowser();
+    await daemonState.page.goto(url, { waitUntil: "load" });
 
-    await daemonState.page.goto(url, {
-      waitUntil: "load",
-    });
+    await pageEventQueue;
 
     commit(
       {
@@ -91,24 +119,16 @@ function createBrowserService({ daemonState, commit }) {
           title: await daemonState.page.title().catch(() => null),
         },
       },
-      {
-        fromAction: "browser.start",
-      }
+      { fromAction: "browser.start" },
     );
   }
 
   async function stop() {
-    if (daemonState.browser) {
-      await daemonState.browser.close();
-    }
+    await daemonState.browser.close();
 
     commit(
       {
         ready: false,
-        browser: null,
-        context: null,
-        page: null,
-
         pageInfo: {
           ...daemonState.pageInfo,
           url: null,
@@ -117,26 +137,45 @@ function createBrowserService({ daemonState, commit }) {
           screenshotPath: null,
         },
       },
-      {
-        fromAction: "browser.stop",
-      }
+      { fromAction: "browser.stop" },
     );
   }
 
-  async function getAom() {
-    if (!daemonState.page) {
-      throw new Error("Browser is not running");
-    }
+  async function viewportLocation() {
+    return daemonState.page.evaluate(() => ({
+      screenX: window.screenX,
+      screenY: window.screenY,
+      devicePixelRatio: window.devicePixelRatio,
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
+    }));
+  }
 
-    return daemonState.page.ariaSnapshot();
+  async function ariaSnapshot() {
+    return daemonState.page.ariaSnapshotJSON({
+      mode: "ai",
+      boxes: true,
+    });
+  }
+
+  async function activeNodes() {
+    const snapshot = await ariaSnapshot();
+    return [
+      findNodesWhereFlagIsTrue(snapshot, "active"),
+      findNodesWhereFlagIsTrue(snapshot, "pressed"),
+      findNodesWhereFlagIsTrue(snapshot, "selected"),
+      findNodesWhereFlagIsTrue(snapshot, "checked"),
+      findNodesWhereFlagIsTrue(snapshot, "expanded"),
+      findNodesWhereFlagIsTrue(snapshot, "level"),
+    ];
   }
 
   return {
-    ensureBrowser,
     start,
     stop,
-    getAom,
+    viewportLocation,
+    ariaSnapshot,
+    activeNodes,
+    getPage: () => daemonState.page,
   };
 }
-
-export default createBrowserService;

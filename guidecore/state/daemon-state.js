@@ -1,38 +1,30 @@
-function createState() {
-    return {
-        browser: null,
-        context: null,
-        page: null,
-
-        pageInfo: {
-            url: null,
-            title: null,
-            screenshotPath: null,
-            accessibilityTree: null,
-        },
-
-        voiceOver: {
-            running: false,
-            mode: null,
-            cursorDescription: null,
-            // TODO linked element from doing the focused stuff
-        },
-
-        ready: false,
-        events: [],
-        version: 0,
-    };
-
+function createDaemonState() {
+  return {
+    browser: null,
+    context: null,
+    page: null,
+    pageInfo: {
+      url: null,
+      title: null,
+      screenshotPath: null,
+      accessibilityTree: null,
+    },
+    voiceOver: {
+      running: false,
+      mode: null,
+      cursorDescription: null,
+    },
+    ready: false,
+    events: [],
+    version: 0,
+  };
 }
 
-function createStateManager({ logger }) {
-  const daemonState = createState();
+export function createStateManager({ logger }) {
+  const daemonState = createDaemonState();
 
   function commit(patch, event = null) {
-    logger.child({
-      patch,
-      event,
-    }).info("daemon_state commit");
+    logger.child({ patch, event }).info("daemon_state commit");
 
     Object.assign(daemonState, patch);
     daemonState.version += 1;
@@ -60,5 +52,3 @@ function createStateManager({ logger }) {
     buildSnapshot,
   };
 }
-
-export default createStateManager;

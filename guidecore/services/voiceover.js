@@ -1,27 +1,39 @@
-import { voiceOver, MacOSKeyCodes, MacOSModifiers } from '@guidepup/guidepup'
+import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { promisify } from "node:util";
+import {
+  MacOSKeyCodes,
+  MacOSModifiers,
+  voiceOver,
+} from "@guidepup/guidepup";
 
-function createVoiceOverService({
-  daemonState,
-  commit,
-}) {
-  function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
+const execFileAsync = promisify(execFile);
 
+export function createVoiceOverService({ daemonState, commit, getPage }) {
   function resolveMode(fromAction) {
     if (fromAction === "voiceover.stop") {
       return null;
     }
-
     if (fromAction.startsWith("voiceover.rotor.")) {
       return "rotor";
     }
-
     if (fromAction.startsWith("voiceover.")) {
       return "normal";
     }
-
     return daemonState.voiceOver.mode;
+  }
+
+  async function getCursorBounds() {
+    const script = `
+tell application "VoiceOver"
+    return bounds of vo cursor
+end tell
+`;
+    const { stdout } = await execFileAsync("/usr/bin/osascript", [
+      "-e",
+      script,
+    ]);
+    return stdout.trim();
   }
 
   async function getCursorDescription() {
@@ -30,34 +42,29 @@ function createVoiceOverService({
       modifiers: [
         MacOSModifiers.Control,
         MacOSModifiers.Option,
+        MacOSModifiers,
       ],
       description: "Repeat Last Spoken Phrase",
       representation: "VO-Z",
     };
-
-    await voiceOver
-      .perform(repeatLastSpokenPhraseCommand)
-      .catch(() => null);
-
-    return voiceOver.lastSpokenPhrase().catch(() => null);
+    await voiceOver.perform(repeatLastSpokenPhraseCommand).catch(() => null);
+    return voiceOver.lastSpokenPhrase();
   }
 
   async function refreshState(fromAction, parameters = null) {
-    const lastSpokenPhrase =
-      await voiceOver.lastSpokenPhrase().catch(() => null);
-
-    const itemTextLog =
-      await voiceOver.itemTextLog().catch(() => []);
-
+    const lastSpokenPhrase = await voiceOver
+      .lastSpokenPhrase()
+      .catch(() => null);
+    const itemTextLog = await voiceOver.itemTextLog().catch(() => []);
+    const pageScreenshotPath = `.././screenshots/${randomUUID()}.jpeg`;
+    await getPage().screenshot({ path: pageScreenshotPath });
     const mode = resolveMode(fromAction);
-
     const nextRunningState =
       fromAction === "voiceover.start"
         ? true
         : fromAction === "voiceover.stop"
           ? false
           : daemonState.voiceOver.running;
-
     const nextCursorDescription =
       fromAction === "voiceover.stop" || mode === "rotor"
         ? null
@@ -65,6 +72,10 @@ function createVoiceOverService({
 
     commit(
       {
+        pageInfo: {
+          ...daemonState.pageInfo,
+          screenshotPath: pageScreenshotPath,
+        },
         voiceOver: {
           ...daemonState.voiceOver,
           running: nextRunningState,
@@ -79,19 +90,17 @@ function createVoiceOverService({
           speech: lastSpokenPhrase,
           itemTextLog,
         },
-      }
+      },
     );
   }
 
   function assertNotRotorMode(action) {
     if (daemonState.voiceOver.mode === "rotor") {
-      throw new Error(
-        `${action} is unavailable while rotor is open`
-      );
+      throw new Error(`${action} is unavailable while rotor is open`);
     }
   }
 
-  async function typeText(text) {
+  async function type(text) {
     if (typeof voiceOver.type === "function") {
       await voiceOver.type(text);
       return;
@@ -102,132 +111,22 @@ function createVoiceOverService({
       "\n": "Enter",
       "\t": "Tab",
     };
-
     for (const character of text) {
-      await sleep(1);
-      await voiceOver.press(
-        characterMap[character] ?? character
-      );
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      await voiceOver.press(characterMap[character] ?? character);
     }
   }
 
   async function start() {
-    await voiceOver.start({
-      capture: true,
-    });
-
+    await voiceOver.start({ capture: true });
     await voiceOver.clearItemTextLog();
     await voiceOver.clearSpokenPhraseLog();
-
     await refreshState("voiceover.start");
   }
 
-  async function stop() {
-    await voiceOver.stop();
-    await refreshState("voiceover.stop");
-  }
-
-  async function next() {
-    assertNotRotorMode("voiceover.next");
-    await voiceOver.next();
-    await refreshState("voiceover.next");
-  }
-
-  async function previous() {
-    assertNotRotorMode("voiceover.previous");
-    await voiceOver.previous();
-    await refreshState("voiceover.previous");
-  }
-
-  async function startInteracting() {
-    assertNotRotorMode("voiceover.startInteracting");
-
-    await voiceOver.perform(
-      voiceOver.commanderCommands.START_INTERACTING_WITH_ITEM
-    );
-
-    await refreshState("voiceover.startInteracting");
-  }
-
-  async function stopInteracting() {
-    assertNotRotorMode("voiceover.stopInteracting");
-
-    await voiceOver.stopInteracting();
-    await refreshState("voiceover.stopInteracting");
-  }
-
-  async function perform(command) {
-    assertNotRotorMode(`voiceover.perform(${command})`);
-
-    await voiceOver.perform(
-      voiceOver.commanderCommands[command]
-    );
-
-    await refreshState("voiceover.perform", command);
-  }
-
-  async function escape() {
-    await voiceOver.perform(
-      voiceOver.commanderCommands.ESCAPE
-    );
-
-    await refreshState("voiceover.escape");
-  }
-
-  async function type(text) {
-    assertNotRotorMode(`voiceover.type(${text})`);
-
-    await typeText(text);
-    await refreshState("voiceover.type", text);
-  }
-
-  async function press(key) {
-    assertNotRotorMode(`voiceover.press(${key})`);
-
-    await voiceOver.press(key);
-    await refreshState("voiceover.press", key);
-  }
-
-  async function openRotor() {
-    await voiceOver.perform(
-      voiceOver.commanderCommands.ROTOR
-    );
-
-    await refreshState("voiceover.rotor.open");
-  }
-
-  async function rotorNextCategory() {
-    await voiceOver.press("ArrowRight");
-    await refreshState("voiceover.rotor.nextCategory");
-  }
-
-  async function rotorPreviousCategory() {
-    await voiceOver.press("ArrowLeft");
-    await refreshState("voiceover.rotor.previousCategory");
-  }
-
-  async function rotorNextItem() {
-    await voiceOver.press("ArrowDown");
-    await refreshState("voiceover.rotor.nextItem");
-  }
-
-  async function rotorPreviousItem() {
-    await voiceOver.press("ArrowUp");
-    await refreshState("voiceover.rotor.previousItem");
-  }
-
-  async function rotorFind(text) {
-    await typeText(text);
-    await refreshState("voiceover.rotor.find", text);
-  }
-
-  async function rotorActivate() {
-    await voiceOver.press("Space");
-    await refreshState("voiceover.rotor.activate");
-  }
-
   async function goToWebContent() {
-    const command = {
+    // ! for this function to work, you need to set the web content inside chrome as the first shortcut
+    const nextHotSpotCommand = {
       keyCode: MacOSKeyCodes.RightSquareBracket,
       modifiers: [
         MacOSModifiers.Control,
@@ -237,35 +136,76 @@ function createVoiceOverService({
       description: "Move to next hot spot",
       representation: "VO-Shift-}",
     };
-
-    await voiceOver.perform(command);
-
-    await refreshState("voiceover.setup");
+    await voiceOver.perform(nextHotSpotCommand);
+    await refreshState("voiceover.goToWebContent");
   }
 
-  
+  async function stop() {
+    await voiceOver.stop();
+    await refreshState("voiceover.stop");
+  }
+
+  async function shutdown() {
+    await voiceOver.stop();
+  }
+
+  async function action(name, operation, parameter) {
+    assertNotRotorMode(parameter === undefined ? name : `${name}(${parameter})`);
+    await operation();
+    await refreshState(name, parameter);
+  }
+
   return {
+    getCursorBounds,
     start,
-    stop,
-    next,
-    previous,
-    startInteracting,
-    stopInteracting,
-    perform,
-    escape,
-    type,
-    press,
-    openRotor,
-    rotorNextCategory,
-    rotorPreviousCategory,
-    rotorNextItem,
-    rotorPreviousItem,
-    rotorFind,
-    rotorActivate,
     goToWebContent,
-    refreshState,
-    assertNotRotorMode,
+    stop,
+    shutdown,
+    next: () => action("voiceover.next", () => voiceOver.next()),
+    previous: () => action("voiceover.previous", () => voiceOver.previous()),
+    startInteracting: () =>
+      action("voiceover.startInteracting", () =>
+        voiceOver.perform(voiceOver.commanderCommands.START_INTERACTING_WITH_ITEM),
+      ),
+    stopInteracting: () =>
+      action("voiceover.stopInteracting", () => voiceOver.stopInteracting()),
+    perform: (command) =>
+      action(
+        "voiceover.perform",
+        () => voiceOver.perform(voiceOver.commanderCommands[command]),
+        command,
+      ),
+    escape: () =>
+      action("voiceover.escape", () =>
+        voiceOver.perform(voiceOver.commanderCommands.ESCAPE),
+      ),
+    type: (text) => action("voiceover.type", () => type(text), text),
+    press: (key) => action("voiceover.press", () => voiceOver.press(key), key),
+    openRotor: () =>
+      voiceOver
+        .perform(voiceOver.commanderCommands.ROTOR)
+        .then(() => refreshState("voiceover.rotor.open")),
+    rotorNextCategory: () =>
+      voiceOver
+        .press("ArrowRight")
+        .then(() => refreshState("voiceover.rotor.nextCategory")),
+    rotorPreviousCategory: () =>
+      voiceOver
+        .press("ArrowLeft")
+        .then(() => refreshState("voiceover.rotor.previousCategory")),
+    rotorNextItem: () =>
+      voiceOver
+        .press("ArrowDown")
+        .then(() => refreshState("voiceover.rotor.nextItem")),
+    rotorPreviousItem: () =>
+      voiceOver
+        .press("ArrowUp")
+        .then(() => refreshState("voiceover.rotor.previousItem")),
+    rotorFind: (text) =>
+      type(text).then(() => refreshState("voiceover.rotor.find", text)),
+    rotorActivate: () =>
+      voiceOver
+        .press("Space")
+        .then(() => refreshState("voiceover.rotor.activate")),
   };
 }
-
-export default createVoiceOverService;

@@ -1,103 +1,98 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import pino, { destination as _destination } from "pino";
+import pino, { destination as createDestination } from "pino";
+// handlers
+import { createCoreHandlers } from "./handlers/core.js";
+import { createBrowserHandlers } from "./handlers/browser.js";
+import { createVoiceOverHandlers } from "./handlers/voiceover.js";
+// core
+import { createRpcServer } from "./rpc/server.js";
+// state
+import { createStateManager } from "./state/daemon-state.js";
+// services
+import { createBrowserService } from "./services/browser.js";
+import { createVoiceOverService } from "./services/voiceover.js";
 
-import createStateManager from "./state/daemon-state.js";
-import createBrowserService from "./services/browser.js";
-import createVoiceOverService from "./services/voiceover.js";
-
-import createHandlers from "./handlers/index.js";
-import createRpcServer from "./rpc/server.js";
+// -----------------------------------------------------------
+// GLOBALS
+// -----------------------------------------------------------
 
 const socketPath = "/tmp/guidecore.sock";
-
+const logsDirectory = join(process.cwd(), "logs");
 const sessionLogPath = join(
-  process.cwd(),
-  `logs/logs-${process.pid}-${Date.now()}.log`
+  logsDirectory,
+  `logs-${process.pid}-${Date.now()}.log`,
 );
 
-const logsDirectory = join(
-  process.cwd(),
-  "logs"
-);
-
-mkdirSync(logsDirectory, {
-  recursive: true,
-});
-
-const destination =
-  _destination(sessionLogPath);
+mkdirSync(logsDirectory, { recursive: true });
 
 const logger = pino(
-  {
-    name: "guidecore-daemon",
-  },
-  destination
+  { name: "guidecore-daemon" },
+  createDestination(sessionLogPath),
 );
 
-// TODO maybe this way of declarating state is not ideal for maintaining consistency
-const {
-  daemonState,
-  commit,
-  buildSnapshot,
-} = createStateManager({
-  logger,
-});
+// -----------------------------------------------------------
+// STATE
+// Single source of truth for all browser and VO actions
+// -----------------------------------------------------------
 
+const state = createStateManager({ logger });
 
 // -----------------------------------------------------------
 // SERVICES
+// Browser and VO functions
 // -----------------------------------------------------------
 
-const browserService =
-  createBrowserService({
-    daemonState,
-    commit
-  });
+const browserService = createBrowserService({
+  daemonState: state.daemonState,
+  commit: state.commit,
+  logger,
+});
+const voiceOverService = createVoiceOverService({
+  daemonState: state.daemonState,
+  commit: state.commit,
+  getPage: browserService.getPage,
+});
 
-const voiceOverService =
-  createVoiceOverService({
-    daemonState,
-    commit
-  });
+// -----------------------------------------------------------
+// HANDLERS
+// Each one of these handlers is a function that will be called by the python agent. 
+// They update the state to keep a single unified source of truth.
+// They're dependent on the services.
+// -----------------------------------------------------------
 
-const handlers =
-  createHandlers({
-    daemonState,
-    buildSnapshot,
-    browserService,
-    voiceOverService,
-  });
+const handlers = {
+  ...createCoreHandlers({
+  buildSnapshot: state.buildSnapshot,
+  }),
+  ...createBrowserHandlers({ browserService }),
+  ...createVoiceOverHandlers({ voiceOverService }),
+};
 
-const rpcServer =
-  createRpcServer({
-    socketPath,
-    handlers,
-    logger,
-  });
+// -----------------------------------------------------------
+// CORE
+// RPC server management.
+// -----------------------------------------------------------
 
+const rpcServer = createRpcServer({
+  socketPath,
+  handlers,
+  logger,
+});
 
 async function start() {
   await rpcServer.start();
-  console.log(
-    `GUIDECORE INFO: RPC daemon listening on ${socketPath}`
-  );
+  console.log(`GUIDECORE INFO: RPC daemon listening on ${socketPath}`);
 }
 
 async function shutdown() {
   try {
-    await voiceOverService.stop();
+    await voiceOverService.shutdown();
   } catch (err) {
-    logger.error(
-      {
-        err,
-      },
-      "Failed to stop VoiceOver during shutdown"
-    );
+    logger.error({ err }, "Failed to stop VoiceOver during shutdown");
   }
 
   await rpcServer.close();
-
   process.exit(0);
 }
 
@@ -105,12 +100,6 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
 start().catch((err) => {
-  logger.error(
-    {
-      err,
-    },
-    "Failed to start daemon"
-  );
-
+  logger.error({ err }, "Failed to start daemon");
   process.exit(1);
 });

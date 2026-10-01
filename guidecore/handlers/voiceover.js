@@ -1,44 +1,11 @@
-function createHandlers({
-  buildSnapshot,
-  browserService,
-  voiceOverService,
-}) {
+export function createVoiceOverHandlers({ voiceOverService }) {
   return {
-    async ping() {
+    async "voiceover.cursorLocation"() {
       return {
         ok: true,
-        time: Date.now(),
+        VOCursorLocation: await voiceOverService.getCursorBounds(),
       };
     },
-
-    async "daemonstate.snapshot"() {
-      return {
-        ok: true,
-        daemon_state: buildSnapshot(),
-      };
-    },
-
-    // -----------------------------
-    // Browser
-    // -----------------------------
-
-    async "browser.start"({ url }) {
-      await browserService.start(url);
-      return { ok: true };
-    },
-
-    async "browser.stop"() {
-      await browserService.stop();
-      return { ok: true };
-    },
-
-    async "browser.aom"() {
-      return browserService.getAom();
-    },
-
-    // -----------------------------
-    // VoiceOver
-    // -----------------------------
 
     async "voiceover.start"() {
       await voiceOverService.start();
@@ -95,10 +62,6 @@ function createHandlers({
       return { ok: true };
     },
 
-    // -----------------------------
-    // Rotor
-    // -----------------------------
-
     async "voiceover.rotor.open"() {
       await voiceOverService.openRotor();
       return { ok: true };
@@ -135,5 +98,3 @@ function createHandlers({
     },
   };
 }
-
-export default createHandlers;
