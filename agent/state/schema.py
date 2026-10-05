@@ -150,7 +150,40 @@ class VoiceOverInfo(TypedDict):
     """
     running: bool
     mode: Literal["normal", "rotor"]
-    cursor_description: Optional[str]
+    last_spoken_phrase: str
+
+class RelevantNodes(TypedDict):
+    '''
+    Nodes that are in some way relevant for the agent.
+    '''
+    active: Annotated[
+        str,
+        ...,
+        (
+            "The element that is currently in focus.",
+            "Hitting interact (VO-Space) when this element is",
+            "active, will activate this element, even if",
+            "last spoken phrase by VoiceOver says we are somewhere else."
+        ),
+    ]
+    pressed: Annotated[
+        list[str],
+        ...,
+        (
+            "Any element in the website that was pressed."
+            "Think of buttons, checkmarks, etc." #TODO check for preciseness
+        ),
+    ]
+    
+
+class PageInformation(TypedDict):
+    """
+    The website we are currently on
+    """
+    url: Optional[str]
+    title: Optional[str]
+    screenshot_path: str
+    
 
 class DaemonSnapshot(TypedDict):
     """
@@ -159,14 +192,13 @@ class DaemonSnapshot(TypedDict):
     version: int
     ready: bool
 
-    page_url: Optional[str]
-    page_title: Optional[str]
-
-    accessibility_tree: str
-    screenshot_path: str
+    page: PageInformation
+    relevant_nodes: RelevantNodes
+    accessibility_tree: str # TODO
+    
 
     voiceover: VoiceOverInfo
-    # events: list[dict] TODO
+    events: list[dict]
 
 class AgentState(TypedDict):
     """

@@ -1,5 +1,33 @@
 import { chromium } from "playwright";
 
+const LANDMARK_ROLES = new Set([
+  "banner",
+  "complementary",
+  "contentinfo",
+  "form",
+  "main",
+  "navigation",
+  "region",
+  "search",
+]);
+
+const INTERACTIVE_ROLES = new Set([
+  "button",
+  "checkbox",
+  "combobox",
+  "link",
+  "listbox",
+  "menuitem",
+  "option",
+  "radio",
+  "searchbox",
+  "slider",
+  "spinbutton",
+  "switch",
+  "tab",
+  "textbox",
+]);
+
 function findNodesWhereFlagIsTrue(tree, flag) {
   const results = [];
 
@@ -26,6 +54,99 @@ function findNodesWhereFlagIsTrue(tree, flag) {
   return results;
 }
 
+function compactNode(node) {
+  return {
+    role: node.role ?? null,
+    name: node.name ?? null,
+    text: node.text ?? null,
+    ref: node.ref ?? null,
+    bounds: node.box ?? null, // TODO
+    active: node.active === true,
+  };
+}
+
+function compactNodeInScreenCoordinates(node, viewportLocation) {
+  const compact = compactNode(node);
+
+  if (!compact.bounds || !viewportLocation) {
+    return compact;
+  }
+
+  return {
+    ...compact,
+    bounds: {
+      ...compact.bounds,
+      x:
+        compact.bounds.x +
+        viewportLocation.screenX,
+      y:
+        compact.bounds.y +
+        viewportLocation.screenY,
+    },
+    coordinateSpace: "screen",
+  };
+}
+
+function findNodesByRole(tree, roles) {
+  const results = [];
+
+  function visit(node) {
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+
+    if (!node || typeof node !== "object") {
+      return;
+    }
+
+    if (roles.has(node.role)) {
+      results.push(compactNode(node));
+    }
+
+    for (const child of node.children ?? []) {
+      visit(child);
+    }
+  }
+
+  visit(tree);
+  return results;
+}
+
+function findActivePath(tree) {
+  function visit(node, ancestors) {
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        const result = visit(child, ancestors);
+        if (result) {
+          return result;
+        }
+      }
+      return null;
+    }
+
+    if (!node || typeof node !== "object") {
+      return null;
+    }
+
+    const path = [...ancestors, compactNode(node)];
+    if (node.active === true) {
+      return path;
+    }
+
+    for (const child of node.children ?? []) {
+      const result = visit(child, path);
+      if (result) {
+        return result;
+      }
+    }
+
+    return null;
+  }
+
+  return visit(tree, []) ?? [];
+}
+
 export function createBrowserService({ daemonState, commit, logger }) {
   let pageEventQueue = Promise.resolve();
 
@@ -40,13 +161,23 @@ export function createBrowserService({ daemonState, commit, logger }) {
 
     page.on("framenavigated", async () => {
       enqueuePageEvent(async () => {
+        const accessibilityState = await collectNodesFromA11yTree();
+        const viewportLocation = accessibilityState.viewportLocation;
+
         commit(
           {
             context: {
               page: {
                 url: page.url(),
                 title: await page.title().catch(() => null),
+                viewportLocation,
               },
+              browserFocus: accessibilityState.browserFocus,
+              cursorPath: accessibilityState.cursorPath,
+              a11y: {
+                tree: accessibilityState.tree,
+              },
+              relevantNodes: accessibilityState.relevantNodes,
             },
           },
           {
@@ -67,7 +198,10 @@ export function createBrowserService({ daemonState, commit, logger }) {
               page: {
                 url: page.url(),
                 title: await page.title().catch(() => null),
+                viewportLocation: accessibilityState.viewportLocation,
               },
+              browserFocus: accessibilityState.browserFocus,
+              cursorPath: accessibilityState.cursorPath,
               a11y: {
                 tree: accessibilityState.tree,
               },
@@ -90,6 +224,25 @@ export function createBrowserService({ daemonState, commit, logger }) {
           browser: null,
           context: {
             ready: false,
+            browserFocus: null,
+            cursorPath: [],
+            a11y: { tree: null },
+            relevantNodes: {
+              active: [],
+              pressed: [],
+              landmarks: [],
+              interactive: [],
+            },
+            page: {
+              viewportLocation: null,
+            },
+            focusComparison: {
+              browserFocusIsInVoiceoverCursor: null,
+              similarityScore: null,
+              textSimilarity: null,
+              roleMatches: null,
+              dimensionsSimilarity: null,
+            },
           },
         },
         { fromAction: "browser.closed" },
@@ -116,6 +269,7 @@ export function createBrowserService({ daemonState, commit, logger }) {
     await daemonState.page.goto(url, { waitUntil: "load" });
 
     await pageEventQueue;
+    const accessibilityState = await collectNodesFromA11yTree();
 
     commit(
       {
@@ -124,7 +278,14 @@ export function createBrowserService({ daemonState, commit, logger }) {
           page: {
             url: daemonState.page.url(),
             title: await daemonState.page.title().catch(() => null),
+            viewportLocation: accessibilityState.viewportLocation,
           },
+          browserFocus: accessibilityState.browserFocus,
+          cursorPath: accessibilityState.cursorPath,
+          a11y: {
+            tree: accessibilityState.tree,
+          },
+          relevantNodes: accessibilityState.relevantNodes,
         },
       },
       { fromAction: "browser.start" },
@@ -142,6 +303,7 @@ export function createBrowserService({ daemonState, commit, logger }) {
             url: null,
             title: null,
             screenshotPath: null,
+            viewportLocation: null,
           },
           a11y: {
             tree: null,
@@ -149,7 +311,18 @@ export function createBrowserService({ daemonState, commit, logger }) {
           relevantNodes: {
             active: [],
             pressed: [],
+            landmarks: [],
+            interactive: [],
           },
+          browserFocus: null,
+          focusComparison: {
+            browserFocusIsInVoiceoverCursor: null,
+            similarityScore: null,
+            textSimilarity: null,
+            roleMatches: null,
+            dimensionsSimilarity: null,
+          },
+          cursorPath: [],
         },
       },
       { fromAction: "browser.stop" },
@@ -161,6 +334,7 @@ export function createBrowserService({ daemonState, commit, logger }) {
       screenX: window.screenX,
       screenY: window.screenY,
       devicePixelRatio: window.devicePixelRatio,
+      coordinateSpace: "screen-origin-plus-viewport",
       innerWidth: window.innerWidth,
       innerHeight: window.innerHeight,
     }));
@@ -183,19 +357,29 @@ export function createBrowserService({ daemonState, commit, logger }) {
     }
 
     const snapshot = await ariaSnapshot();
+    const activeNodes = findNodesWhereFlagIsTrue(snapshot, "active");
+    const viewportLocation = await page.evaluate(() => ({
+      screenX: window.screenX,
+      screenY: window.screenY,
+      devicePixelRatio: window.devicePixelRatio,
+      coordinateSpace: "screen-origin-plus-viewport",
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
+    }));
 
     return {
       tree: snapshot,
       relevantNodes: {
-        active: findNodesWhereFlagIsTrue(snapshot, "active"), // knowing this is key, because any element on this list, if VO- space is pressed, thats the action to take.
+        active: activeNodes, // knowing this is key, because any element on this list, if VO- space is pressed, thats the action to take.
         pressed: findNodesWhereFlagIsTrue(snapshot, "pressed"),
-
-        // ? maybe in the future if they are useful
-        // selected: findNodesWhereFlagIsTrue(snapshot, "selected"),
-        // checked: findNodesWhereFlagIsTrue(snapshot, "checked"),
-        // expanded: findNodesWhereFlagIsTrue(snapshot, "expanded"),
-        // level: findNodesWhereFlagIsTrue(snapshot, "level"),
+        landmarks: findNodesByRole(snapshot, LANDMARK_ROLES),
+        interactive: findNodesByRole(snapshot, INTERACTIVE_ROLES),
       },
+      cursorPath: findActivePath(snapshot),
+      browserFocus: activeNodes[0]
+        ? compactNodeInScreenCoordinates(activeNodes[0], viewportLocation)
+        : null,
+      viewportLocation,
     };
   }
 

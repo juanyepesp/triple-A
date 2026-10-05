@@ -41,8 +41,7 @@ def bootstrap(state: AgentState)-> AgentState:
 
 def snapshot(state: AgentState)-> AgentState:
     '''
-    This node takes the snapshot of the current state, 
-    TODO determines if rotor is on
+    This node takes the snapshot of the current state.
     '''
     state['snapshot'] = parse_daemon_snapshot(guidecore.snapshot())
     return state

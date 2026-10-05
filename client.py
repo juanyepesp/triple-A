@@ -117,13 +117,13 @@ client.call(
 # accion
 client.call("voiceover.goToWebContent")
 print('\nGO TO WEB CONTENT')
-input("continue?")
+input("\ncontinue?")
 
 res = client.call(
     "voiceover.startInteracting"
 )
 print('\nSTART INTERACTING')
-input("continue?")
+input("\ncontinue?")
 action = 'next'
 
 while True:
@@ -141,9 +141,15 @@ while True:
             "voiceover.startInteracting"
         )
     res = client.call("daemonstate.snapshot")
-    print('\nVO info:')
+    print('-'*30)
     describe(res)
-    action = input("say action?")
+    print('-'*30)
+    pprint(res['daemon_state']['context']['browserFocus'])
+    print('-'*30)
+    pprint(res['daemon_state']['context']['voiceoverFocus'])
+    print('-'*30)
+    pprint(res['daemon_state']['context']['focusComparison'])
+    action = input("\nsay action?")
     if action == '':
         action = 'next'
 

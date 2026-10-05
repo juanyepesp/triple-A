@@ -9,6 +9,97 @@ import {
 
 const execFileAsync = promisify(execFile);
 
+function parseCursorBounds(value) {
+  const numbers = String(value)
+    .match(/-?\d+(?:\.\d+)?/g)
+    ?.map(Number);
+
+  if (!numbers || numbers.length < 4) {
+    return null;
+  }
+
+  const [left, top, right, bottom] = numbers;
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+    coordinateSpace: "screen",
+  };
+}
+
+function normalizeText(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function textSimilarity(browserFocus, lastSpokenPhrase, itemTextLog) {
+  const focusText = normalizeText(browserFocus?.name);
+  if (!focusText) {
+    return 0;
+  }
+
+  const candidates = [lastSpokenPhrase, ...(itemTextLog ?? [])]
+    .map(normalizeText)
+    .filter(Boolean);
+
+  if (candidates.some((candidate) => candidate.includes(focusText))) {
+    return 1;
+  }
+
+  const focusWords = new Set(focusText.split(" "));
+  return Math.max(
+    0,
+    ...candidates.map((candidate) => {
+      const candidateWords = new Set(candidate.split(" "));
+      const overlap = [...focusWords].filter((word) =>
+        candidateWords.has(word),
+      ).length;
+      return overlap / Math.max(focusWords.size, candidateWords.size);
+    }),
+  );
+}
+
+function dimensionSimilarity(browserFocus, voiceoverBounds) {
+  const first = browserFocus?.bounds;
+  const second = voiceoverBounds;
+  if (!first || !second) {
+    return 0;
+  }
+
+  const widthSimilarity =
+    Math.min(first.width, second.width) / Math.max(first.width, second.width);
+  const heightSimilarity =
+    Math.min(first.height, second.height) /
+    Math.max(first.height, second.height);
+  return (widthSimilarity + heightSimilarity) / 2;
+}
+
+function compareFocus(browserFocus, voiceoverBounds, lastSpokenPhrase, itemTextLog) {
+  const textScore = textSimilarity(
+    browserFocus,
+    lastSpokenPhrase,
+    itemTextLog,
+  );
+  const roleMatches = Boolean(
+    browserFocus?.role &&
+      normalizeText(lastSpokenPhrase).startsWith(normalizeText(browserFocus.role)),
+  );
+  const dimensionsScore = dimensionSimilarity(browserFocus, voiceoverBounds);
+  const similarityScore =
+    textScore * 0.6 + (roleMatches ? 0.15 : 0) + dimensionsScore * 0.25;
+
+  return {
+    browserFocusIsInVoiceoverCursor: similarityScore >= 0.6,
+    similarityScore,
+    textSimilarity: textScore,
+    roleMatches,
+    dimensionsSimilarity: dimensionsScore,
+  };
+}
+
 export function createVoiceOverService({
   daemonState,
   commit,
@@ -38,7 +129,7 @@ end tell
       "-e",
       script,
     ]);
-    return stdout.trim();
+    return parseCursorBounds(stdout.trim());
   }
 
   async function refreshState(fromAction, parameters = null) {
@@ -55,6 +146,7 @@ end tell
       .catch(() => null);
     const itemTextLog = await voiceOver.itemTextLog().catch(() => []);
     const accessibilityState = await collectAccessibilityState();
+    const voiceoverBounds = await getCursorBounds().catch(() => null);
     const pageScreenshotPath = `.././screenshots/${randomUUID()}.jpeg`;
     await page.screenshot({ path: pageScreenshotPath });
     const mode = resolveMode(fromAction);
@@ -64,6 +156,13 @@ end tell
         : fromAction === "voiceover.stop"
           ? false
           : daemonState.context.voiceover.running;
+
+    const history = lastSpokenPhrase
+      ? [
+          ...daemonState.context.voiceoverFocus.history,
+          lastSpokenPhrase,
+        ].slice(-3)
+      : daemonState.context.voiceoverFocus.history;
 
     commit(
       {
@@ -76,6 +175,22 @@ end tell
             tree: accessibilityState.tree,
           },
           relevantNodes: accessibilityState.relevantNodes,
+          browserFocus: accessibilityState.browserFocus,
+          cursorPath: accessibilityState.cursorPath,
+          voiceoverFocus: {
+            bounds: voiceoverBounds,
+            lastSpokenPhrase,
+            history,
+            itemTextLog,
+          },
+          focusComparison: {
+            ...compareFocus(
+              accessibilityState.browserFocus,
+              voiceoverBounds,
+              lastSpokenPhrase,
+              itemTextLog,
+            ),
+          },
           voiceover: {
             ...daemonState.context.voiceover,
             running: nextRunningState,

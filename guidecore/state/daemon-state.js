@@ -11,13 +11,31 @@ function createDaemonState() {
         url: null,
         title: null,
         screenshotPath: null,
+        viewportLocation: null,
       },
-      relevantNodes : {
-        active: null,
+      browserFocus: null,
+      voiceoverFocus: {
+        bounds: null,
+        lastSpokenPhrase: null,
+        history: [],
+        itemTextLog: [],
+      },
+      focusComparison: {
+        browserFocusIsInVoiceoverCursor: null,
+        similarityScore: null,
+        textSimilarity: null,
+        roleMatches: null,
+        dimensionsSimilarity: null,
+      },
+      cursorPath: [],
+      relevantNodes: {
+        active: [],
         pressed: [],
+        landmarks: [],
+        interactive: [],
       },
       a11y: {
-        tree: null,
+        tree: null, // TODO this needs to return only relevant nodes, not all of them because it will become a mess
       },
       voiceover: {
         running: false,
@@ -44,17 +62,28 @@ export function createStateManager({ logger }) {
       if (contextPatch.page) {
         Object.assign(daemonState.context.page, contextPatch.page);
       }
-      if (contextPatch.relevantNodes) {
-        Object.assign(
-          daemonState.context.relevantNodes,
-          contextPatch.relevantNodes,
-        );
+      for (const field of [
+        "browserFocus",
+        "focusComparison",
+        "relevantNodes",
+        "a11y",
+        "voiceoverFocus",
+        "voiceover",
+      ]) {
+        if (contextPatch[field] !== undefined) {
+          if (
+            contextPatch[field] === null ||
+            field === "browserFocus" ||
+            Array.isArray(contextPatch[field])
+          ) {
+            daemonState.context[field] = contextPatch[field];
+          } else {
+            Object.assign(daemonState.context[field], contextPatch[field]);
+          }
+        }
       }
-      if (contextPatch.a11y) {
-        Object.assign(daemonState.context.a11y, contextPatch.a11y);
-      }
-      if (contextPatch.voiceover) {
-        Object.assign(daemonState.context.voiceover, contextPatch.voiceover);
+      if (contextPatch.cursorPath) {
+        daemonState.context.cursorPath = contextPatch.cursorPath;
       }
       if (contextPatch.ready !== undefined) {
         daemonState.context.ready = contextPatch.ready;
@@ -76,10 +105,22 @@ export function createStateManager({ logger }) {
       version: daemonState.version,
       context: {
         page: { ...daemonState.context.page },
+        browserFocus: daemonState.context.browserFocus
+          ? { ...daemonState.context.browserFocus }
+          : null,
+        voiceoverFocus: {
+          ...daemonState.context.voiceoverFocus,
+          history: [...daemonState.context.voiceoverFocus.history],
+          itemTextLog: [...daemonState.context.voiceoverFocus.itemTextLog],
+        },
+        focusComparison: { ...daemonState.context.focusComparison },
+        cursorPath: [...daemonState.context.cursorPath],
         relevantNodes: {
           ...daemonState.context.relevantNodes,
-          active: [...(daemonState.context.relevantNodes.active ?? [])],
+          active: [...daemonState.context.relevantNodes.active],
           pressed: [...daemonState.context.relevantNodes.pressed],
+          landmarks: [...daemonState.context.relevantNodes.landmarks],
+          interactive: [...daemonState.context.relevantNodes.interactive],
         },
         a11y: { ...daemonState.context.a11y },
         voiceover: { ...daemonState.context.voiceover },
