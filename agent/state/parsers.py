@@ -114,7 +114,6 @@ def parse_daemon_snapshot(raw: dict) -> DaemonSnapshot:
 
     voiceover = VoiceOverInfo(
         running=voiceover_raw['running'],
-        mode=voiceover_raw['mode'],
         cursor_description=voiceover_raw['cursorDescription']
     )
 

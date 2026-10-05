@@ -9,8 +9,7 @@ from graph.nodes import (
     perception,
     evaluation,
     decision,
-    normal_tool_node,
-    rotor_tool_node,
+    voiceover_tool_node,
     report,
     stop,
 )
@@ -35,8 +34,7 @@ def build_graph():
     graph.add_node("evaluation", evaluation)
     graph.add_node("decision", decision)
 
-    graph.add_node("normal_tools", normal_tool_node)
-    graph.add_node("rotor_tools", rotor_tool_node)
+    graph.add_node("voiceover_tools", voiceover_tool_node)
 
     graph.add_node("report", report)
     graph.add_node("stop", stop)
@@ -72,14 +70,12 @@ def build_graph():
         "decision",
         route_to_tools,
         {
-            "normal_tools": "normal_tools",
-            "rotor_tools": "rotor_tools",
+            "voiceover_tools": "voiceover_tools",
             "done": "snapshot",
         },
     )
 
-    graph.add_edge("normal_tools", "snapshot")
-    graph.add_edge("rotor_tools", "snapshot")
+    graph.add_edge("voiceover_tools", "snapshot")
 
     # ---------------------------
     # Finish

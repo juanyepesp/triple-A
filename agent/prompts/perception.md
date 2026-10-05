@@ -16,6 +16,8 @@ or not present at all.
 
 Do not assume that a target element has been found merely because the goal mentions it.
 
+<!-- TODO --> VO usually will first read the element on screen if it is text, and then say what kind of element you're seeing, and what you can do with it.
+
 # Task
 
 Interpret the environment from the perspective of a blind screen-reader user. Understand and describe the current situation, from the ultimate goal to tackle, using VO information and a page description.

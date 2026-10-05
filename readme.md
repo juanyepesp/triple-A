@@ -28,9 +28,15 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 cd ../guidecore
-npm install
+npm ci
 npx playwright install chromium
+npx @guidepup/setup setup
+npx @guidepup/setup install
 ```
+
+Install the Guidecore dependencies on the machine where the daemon will run.
+Do not copy `guidecore/node_modules` between machines; native packages and
+platform-specific Guidepup assets must be installed locally.
 
 ## Run
 

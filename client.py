@@ -117,7 +117,6 @@ client.call(
 # accion
 client.call("voiceover.goToWebContent")
 print('\nGO TO WEB CONTENT')
-input("\ncontinue?")
 
 res = client.call(
     "voiceover.startInteracting"
@@ -132,6 +131,30 @@ while True:
         res = client.call(
             "voiceover.next"
         )
+    elif action == 'heading': 
+            res = client.call(
+                "voiceover.nextHeading"
+            )
+    elif action == 'headingp': 
+            res = client.call(
+                "voiceover.previousHeading"
+            )
+    elif action == 'link': 
+            res = client.call(
+                "voiceover.nextLink"
+            )
+    elif action == 'linkp': 
+            res = client.call(
+                "voiceover.previousLink"
+            )
+    elif action == 'landmark': 
+            res = client.call(
+                "voiceover.nextLandmark"
+            )
+    elif action == 'landmarkp': 
+            res = client.call(
+                "voiceover.previousLandmark"
+            )
     elif action == 'prev': 
         res = client.call(
             "voiceover.previous"
@@ -152,6 +175,8 @@ while True:
     action = input("\nsay action?")
     if action == '':
         action = 'next'
+    if action == 'esc':
+        break
 
 # # client.call(
 # #     "voiceover.stop",

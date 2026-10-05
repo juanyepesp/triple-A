@@ -10,6 +10,7 @@ sync_now() {
         --delete \
         --exclude='.git/' \
         --exclude='venv/' \
+        --exclude='node_modules/' \
         --exclude='vision_outputs/' \
         --exclude='screenshots/' \
         --exclude='.venv/' \

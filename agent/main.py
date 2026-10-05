@@ -11,8 +11,8 @@ def render_active_node(active_node: str) -> None:
         "snapshot",
         "perception",
         "evaluation",
-        "normal_decision / rotor_decision",
-        "normal_tools / rotor_tools",
+        "decision",
+        "voiceover_tools",
         "report",
         "stop",
     ]

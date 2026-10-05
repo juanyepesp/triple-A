@@ -35,31 +35,87 @@ function normalizeText(value) {
     .trim();
 }
 
-function textSimilarity(browserFocus, lastSpokenPhrase, itemTextLog) {
+function containsCue(text, cue) {
+  return cue.includes(" ")
+    ? text.includes(cue)
+    : new RegExp(`\\b${cue}\\b`).test(text);
+}
+
+function resolveWebContentScope(
+  currentValue,
+  lastSpokenPhrase,
+) {
+  const spokenText = normalizeText(lastSpokenPhrase);
+
+  const outsideCues = [
+    "google chrome",
+    "chrome",
+    "tab",
+    "toolbar",
+    "address bar",
+    "address and search bar",
+    "bookmarks bar",
+    "window",
+    "menu bar",
+    "dock",
+    "desktop",
+  ];
+  const insideCues = [
+    "web content",
+    "webpage",
+    "web page",
+    "heading",
+    "link",
+    "button",
+    "checkbox",
+    "combobox",
+    "textbox",
+    "search field",
+    "form",
+    "landmark",
+    "banner",
+    "navigation",
+    "main",
+    "contentinfo",
+    "group",
+    "paragraph",
+    "article",
+    "image",
+    "table",
+    "list",
+  ];
+
+  if (outsideCues.some((cue) => containsCue(spokenText, cue))) {
+    return true;
+  }
+
+  if (insideCues.some((cue) => containsCue(spokenText, cue))) {
+    return false;
+  }
+
+  return currentValue;
+}
+
+function textSimilarity(browserFocus, lastSpokenPhrase) {
   const focusText = normalizeText(browserFocus?.name);
   if (!focusText) {
     return 0;
   }
 
-  const candidates = [lastSpokenPhrase, ...(itemTextLog ?? [])]
-    .map(normalizeText)
-    .filter(Boolean);
+  const spokenText = normalizeText(lastSpokenPhrase);
 
-  if (candidates.some((candidate) => candidate.includes(focusText))) {
+  if (!spokenText) {
+    return 0;
+  }
+
+  if (spokenText.includes(focusText)) {
     return 1;
   }
 
   const focusWords = new Set(focusText.split(" "));
-  return Math.max(
-    0,
-    ...candidates.map((candidate) => {
-      const candidateWords = new Set(candidate.split(" "));
-      const overlap = [...focusWords].filter((word) =>
-        candidateWords.has(word),
-      ).length;
-      return overlap / Math.max(focusWords.size, candidateWords.size);
-    }),
-  );
+  const spokenWords = new Set(spokenText.split(" "));
+  const overlap = [...focusWords].filter((word) => spokenWords.has(word)).length;
+  return overlap / Math.max(focusWords.size, spokenWords.size);
 }
 
 function dimensionSimilarity(browserFocus, voiceoverBounds) {
@@ -77,24 +133,20 @@ function dimensionSimilarity(browserFocus, voiceoverBounds) {
   return (widthSimilarity + heightSimilarity) / 2;
 }
 
-function compareFocus(browserFocus, voiceoverBounds, lastSpokenPhrase, itemTextLog) {
-  const textScore = textSimilarity(
-    browserFocus,
-    lastSpokenPhrase,
-    itemTextLog,
-  );
+function compareFocus(browserFocus, voiceoverBounds, lastSpokenPhrase) {
+  const textScore = textSimilarity(browserFocus, lastSpokenPhrase);
   const roleMatches = Boolean(
     browserFocus?.role &&
       normalizeText(lastSpokenPhrase).startsWith(normalizeText(browserFocus.role)),
   );
   const dimensionsScore = dimensionSimilarity(browserFocus, voiceoverBounds);
   const similarityScore =
-    textScore * 0.6 + (roleMatches ? 0.15 : 0) + dimensionsScore * 0.25;
+    textScore * 0.6 + (roleMatches ? 0.05 : 0) + dimensionsScore * 0.35; // ? heurisitically chosen.
 
   return {
-    browserFocusIsInVoiceoverCursor: similarityScore >= 0.6,
+    VOCursorBrowserFocusAreSimilarEnough: similarityScore >= 0.9,
     similarityScore,
-    textSimilarity: textScore,
+    textSimilarity: [textScore, lastSpokenPhrase],
     roleMatches,
     dimensionsSimilarity: dimensionsScore,
   };
@@ -106,19 +158,6 @@ export function createVoiceOverService({
   getPage,
   collectAccessibilityState,
 }) {
-  function resolveMode(fromAction) {
-    if (fromAction === "voiceover.stop") {
-      return null;
-    }
-    if (fromAction.startsWith("voiceover.rotor.")) {
-      return "rotor";
-    }
-    if (fromAction.startsWith("voiceover.")) {
-      return "normal";
-    }
-    return daemonState.context.voiceover.mode;
-  }
-
   async function getCursorBounds() {
     const script = `
 tell application "VoiceOver"
@@ -144,25 +183,21 @@ end tell
     const lastSpokenPhrase = await voiceOver
       .lastSpokenPhrase()
       .catch(() => null);
-    const itemTextLog = await voiceOver.itemTextLog().catch(() => []);
+    const itemTextLog = (await voiceOver.itemTextLog().catch(() => [])).slice(-5);
     const accessibilityState = await collectAccessibilityState();
     const voiceoverBounds = await getCursorBounds().catch(() => null);
     const pageScreenshotPath = `.././screenshots/${randomUUID()}.jpeg`;
     await page.screenshot({ path: pageScreenshotPath });
-    const mode = resolveMode(fromAction);
     const nextRunningState =
       fromAction === "voiceover.start"
         ? true
         : fromAction === "voiceover.stop"
           ? false
           : daemonState.context.voiceover.running;
-
-    const history = lastSpokenPhrase
-      ? [
-          ...daemonState.context.voiceoverFocus.history,
-          lastSpokenPhrase,
-        ].slice(-3)
-      : daemonState.context.voiceoverFocus.history;
+    const isOutsideWebContent = resolveWebContentScope(
+      daemonState.context.voiceoverFocus.isOutsideWebContent,
+      lastSpokenPhrase,
+    );
 
     commit(
       {
@@ -180,7 +215,7 @@ end tell
           voiceoverFocus: {
             bounds: voiceoverBounds,
             lastSpokenPhrase,
-            history,
+            isOutsideWebContent,
             itemTextLog,
           },
           focusComparison: {
@@ -188,13 +223,11 @@ end tell
               accessibilityState.browserFocus,
               voiceoverBounds,
               lastSpokenPhrase,
-              itemTextLog,
             ),
           },
           voiceover: {
             ...daemonState.context.voiceover,
             running: nextRunningState,
-            mode,
             lastSpokenPhrase,
           },
         },
@@ -208,12 +241,6 @@ end tell
         },
       },
     );
-  }
-
-  function assertNotRotorMode(action) {
-    if (daemonState.context.voiceover.mode === "rotor") {
-      throw new Error(`${action} is unavailable while rotor is open`);
-    }
   }
 
   async function type(text) {
@@ -234,7 +261,11 @@ end tell
   }
 
   async function start() {
-    await voiceOver.start({ capture: true });
+    await voiceOver.start({
+      capture: true,
+      retries: 3,
+      timeout: 10000,
+    });
     await voiceOver.clearItemTextLog();
     await voiceOver.clearSpokenPhraseLog();
     await refreshState("voiceover.start");
@@ -266,7 +297,6 @@ end tell
   }
 
   async function action(name, operation, parameter) {
-    assertNotRotorMode(parameter === undefined ? name : `${name}(${parameter})`);
     await operation();
     await refreshState(name, parameter);
   }
@@ -279,6 +309,12 @@ end tell
     shutdown,
     next: () => action("voiceover.next", () => voiceOver.next()),
     previous: () => action("voiceover.previous", () => voiceOver.previous()),
+    nextHeading: () => action("voiceover.nextHeading", () => voiceOver.nextHeading()),
+    previousHeading: () => action("voiceover.previousHeading",() => voiceOver.previousHeading()),
+    nextLandmark: () => action("voiceover.nextLandmark", () => voiceOver.nextLandmark()),
+    previousLandmark: () => action("voiceover.previousLandmark", () => voiceOver.previousLandmark()),
+    nextLink: () => action("voiceover.nextLink", () => voiceOver.nextLink()),
+    previousLink: () => action("voiceover.previousLink", () => voiceOver.previousLink(),),
     startInteracting: () =>
       action("voiceover.startInteracting", () =>
         voiceOver.perform(voiceOver.commanderCommands.START_INTERACTING_WITH_ITEM),
@@ -297,31 +333,5 @@ end tell
       ),
     type: (text) => action("voiceover.type", () => type(text), text),
     press: (key) => action("voiceover.press", () => voiceOver.press(key), key),
-    openRotor: () =>
-      voiceOver
-        .perform(voiceOver.commanderCommands.ROTOR)
-        .then(() => refreshState("voiceover.rotor.open")),
-    rotorNextCategory: () =>
-      voiceOver
-        .press("ArrowRight")
-        .then(() => refreshState("voiceover.rotor.nextCategory")),
-    rotorPreviousCategory: () =>
-      voiceOver
-        .press("ArrowLeft")
-        .then(() => refreshState("voiceover.rotor.previousCategory")),
-    rotorNextItem: () =>
-      voiceOver
-        .press("ArrowDown")
-        .then(() => refreshState("voiceover.rotor.nextItem")),
-    rotorPreviousItem: () =>
-      voiceOver
-        .press("ArrowUp")
-        .then(() => refreshState("voiceover.rotor.previousItem")),
-    rotorFind: (text) =>
-      type(text).then(() => refreshState("voiceover.rotor.find", text)),
-    rotorActivate: () =>
-      voiceOver
-        .press("Space")
-        .then(() => refreshState("voiceover.rotor.activate")),
   };
 }

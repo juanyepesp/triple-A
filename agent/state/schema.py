@@ -149,7 +149,6 @@ class VoiceOverInfo(TypedDict):
     VoiceOver information from the Daemon State.
     """
     running: bool
-    mode: Literal["normal", "rotor"]
     last_spoken_phrase: str
 
 class RelevantNodes(TypedDict):

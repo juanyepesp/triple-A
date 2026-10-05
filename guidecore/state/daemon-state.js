@@ -17,11 +17,11 @@ function createDaemonState() {
       voiceoverFocus: {
         bounds: null,
         lastSpokenPhrase: null,
-        history: [],
+        isOutsideWebContent: true,
         itemTextLog: [],
       },
       focusComparison: {
-        browserFocusIsInVoiceoverCursor: null,
+        VOCursorBrowserFocusAreSimilarEnough: null,
         similarityScore: null,
         textSimilarity: null,
         roleMatches: null,
@@ -39,7 +39,6 @@ function createDaemonState() {
       },
       voiceover: {
         running: false,
-        mode: null,
         lastSpokenPhrase: null,
       },
       ready: false,
@@ -110,7 +109,6 @@ export function createStateManager({ logger }) {
           : null,
         voiceoverFocus: {
           ...daemonState.context.voiceoverFocus,
-          history: [...daemonState.context.voiceoverFocus.history],
           itemTextLog: [...daemonState.context.voiceoverFocus.itemTextLog],
         },
         focusComparison: { ...daemonState.context.focusComparison },

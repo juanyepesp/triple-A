@@ -237,7 +237,7 @@ export function createBrowserService({ daemonState, commit, logger }) {
               viewportLocation: null,
             },
             focusComparison: {
-              browserFocusIsInVoiceoverCursor: null,
+              VOCursorBrowserFocusAreSimilarEnough: null,
               similarityScore: null,
               textSimilarity: null,
               roleMatches: null,
@@ -316,7 +316,7 @@ export function createBrowserService({ daemonState, commit, logger }) {
           },
           browserFocus: null,
           focusComparison: {
-            browserFocusIsInVoiceoverCursor: null,
+            VOCursorBrowserFocusAreSimilarEnough: null,
             similarityScore: null,
             textSimilarity: null,
             roleMatches: null,

@@ -29,6 +29,24 @@ def voiceover_next() -> Any:
 def voiceover_previous() -> Any:
     return client.call("voiceover.previous")
 
+def voiceover_next_heading() -> Any:
+    return client.call("voiceover.nextHeading")
+
+def voiceover_previous_heading() -> Any:
+    return client.call("voiceover.previousHeading")
+
+def voiceover_next_landmark() -> Any:
+    return client.call("voiceover.nextLandmark")
+
+def voiceover_previous_landmark() -> Any:
+    return client.call("voiceover.previousLandmark")
+
+def voiceover_next_link() -> Any:
+    return client.call("voiceover.nextLink")
+
+def voiceover_previous_link() -> Any:
+    return client.call("voiceover.previousLink")
+
 def voiceover_start_interacting() -> Any:
     return client.call("voiceover.startInteracting")
 
@@ -40,24 +58,3 @@ def voiceover_escape() -> Any:
 
 def voiceover_press(key: str) -> Any:
     return client.call("voiceover.press", {"key": key})
-
-def voiceover_rotor_open() -> Any:
-    return client.call("voiceover.rotor.open")
-
-def voiceover_rotor_next_category() -> Any:
-    return client.call("voiceover.rotor.nextCategory")
-
-def voiceover_rotor_previous_category() -> Any:
-    return client.call("voiceover.rotor.previousCategory")
-
-def voiceover_rotor_next_item() -> Any:
-    return client.call("voiceover.rotor.nextItem")
-
-def voiceover_rotor_previous_item() -> Any:
-    return client.call("voiceover.rotor.previousItem")
-
-def voiceover_rotor_find( text: str) -> Any:
-    return client.call("voiceover.rotor.find", {"text": text})
-
-def voiceover_rotor_activate() -> Any:
-    return client.call("voiceover.rotor.activate")

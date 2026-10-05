@@ -37,7 +37,6 @@ Treat the perception as useful evidence, but do not invent information that is n
 Before selecting an action, reason through the following questions:
 
 1. What is the agent currently focused on?
-2. What interaction mode is VoiceOver currently in?
 3. What information is already known?
 4. What information is still missing?
 5. What elements or navigation paths are currently available?
@@ -63,7 +62,6 @@ Use the available VoiceOver tools to interact with the environment.
 
 Only use tools that are currently available.
 
-The available tools correspond to the current VoiceOver interaction mode.
 
 Do not assume a tool succeeded based only on its name.
 
@@ -75,10 +73,6 @@ Prefer the smallest action that meaningfully reduces uncertainty.
 Do not call a tool merely because it is available.
 
 We abbreviate the usage of "Control + Option" keys as VO for simplicity, because those are the "VoiceOver keys". Although the VoiceOver utterance will most likely say the keys instead.
-
-Opening the Rotor switches VoiceOver into Rotor mode.
-    While the Rotor is active, normal VoiceOver navigation commands cannot be used.
-
 
 # Constraints
 

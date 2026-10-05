@@ -62,38 +62,33 @@ export function createVoiceOverHandlers({ voiceOverService }) {
       return { ok: true };
     },
 
-    async "voiceover.rotor.open"() {
-      await voiceOverService.openRotor();
+    async "voiceover.nextHeading"() {
+      await voiceOverService.nextHeading();
       return { ok: true };
     },
 
-    async "voiceover.rotor.nextCategory"() {
-      await voiceOverService.rotorNextCategory();
+    async "voiceover.previousHeading"() {
+      await voiceOverService.previousHeading();
       return { ok: true };
     },
 
-    async "voiceover.rotor.previousCategory"() {
-      await voiceOverService.rotorPreviousCategory();
+    async "voiceover.nextLandmark"() {
+      await voiceOverService.nextLandmark();
       return { ok: true };
     },
 
-    async "voiceover.rotor.nextItem"() {
-      await voiceOverService.rotorNextItem();
+    async "voiceover.previousLandmark"() {
+      await voiceOverService.previousLandmark();
       return { ok: true };
     },
 
-    async "voiceover.rotor.previousItem"() {
-      await voiceOverService.rotorPreviousItem();
+    async "voiceover.nextLink"() {
+      await voiceOverService.nextLink();
       return { ok: true };
     },
 
-    async "voiceover.rotor.find"({ text }) {
-      await voiceOverService.rotorFind(text);
-      return { ok: true };
-    },
-
-    async "voiceover.rotor.activate"() {
-      await voiceOverService.rotorActivate();
+    async "voiceover.previousLink"() {
+      await voiceOverService.previousLink();
       return { ok: true };
     },
   };

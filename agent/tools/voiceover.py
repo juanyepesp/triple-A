@@ -54,20 +54,48 @@ def voiceover_type() -> str:
     return
 
 @tool
-def rotor_open() -> str:
+def voiceover_next_heading() -> str:
     """
-    Open the VoiceOver Rotor. Useful for navigating the website by semantic category, such as links, headings, form controls, landmarks. 
-    Keyboard equivalent: VO + U
+    Move VoiceOver to the next heading.
     """
-    return actions.rotor_open()
+    return actions.voiceover_next_heading()
+
+@tool
+def voiceover_previous_heading() -> str:
+    """Move VoiceOver to the previous heading."""
+    return actions.voiceover_previous_heading()
+
+@tool
+def voiceover_next_landmark() -> str:
+    """Move VoiceOver to the next landmark."""
+    return actions.voiceover_next_landmark()
+
+@tool
+def voiceover_previous_landmark() -> str:
+    """Move VoiceOver to the previous landmark."""
+    return actions.voiceover_previous_landmark()
+
+@tool
+def voiceover_next_link() -> str:
+    """Move VoiceOver to the next link."""
+    return actions.voiceover_next_link()
+
+@tool
+def voiceover_previous_link() -> str:
+    """Move VoiceOver to the previous link."""
+    return actions.voiceover_previous_link()
 
 
-
-normal_tools = [
+voiceover_tools = [
     voiceover_next,
     voiceover_previous,
+    voiceover_next_heading,
+    voiceover_previous_heading,
+    voiceover_next_landmark,
+    voiceover_previous_landmark,
+    voiceover_next_link,
+    voiceover_previous_link,
     voiceover_start_interacting,
     voiceover_stop_interacting,
     voiceover_go_to_web_content,
-    rotor_open,
 ]

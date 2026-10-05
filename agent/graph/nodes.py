@@ -1,8 +1,7 @@
 from state.schema import AgentState, Perception, Evaluation
 from prompts.load import load_prompt
 from tools import actions as guidecore
-from tools.voiceover import normal_tools
-from tools.rotor import rotor_tools
+from tools.voiceover import voiceover_tools
 from tools.image_processing import (apply_impairment, encode_jpeg, image_changed, image_hash, load_screenshot, save_vision_report)
 from state.parsers import parse_daemon_snapshot
 
@@ -16,8 +15,7 @@ model = ChatOpenAI(
 
 perception_model = model.with_structured_output(Perception)
 evaluation_model = model.with_structured_output(Evaluation)
-normal_tools_model = model.bind_tools(normal_tools) 
-rotor_tools_model = model.bind_tools(rotor_tools) 
+voiceover_tools_model = model.bind_tools(voiceover_tools)
 
 def bootstrap(state: AgentState)-> AgentState:
     '''This node sets up the browser, the screen reader, makes sure everything works correctly'''
@@ -267,19 +265,13 @@ def decision(state: AgentState) -> AgentState:
     Current evaluation:
     {state["evaluation"]}
 
-    Current VoiceOver mode:
-    {state["snapshot"]['voiceover']['mode']}
     """,
         },
     ]
 
     messages.extend(state["messages"])
 
-    response = (
-        rotor_tools_model
-        if state["snapshot"]['voiceover']['mode'] == "rotor"
-        else normal_tools_model
-    ).invoke(messages)
+    response = voiceover_tools_model.invoke(messages)
     
     print("\n=== DECISION RAW RESPONSE ===")
     print(response)
@@ -293,8 +285,7 @@ def decision(state: AgentState) -> AgentState:
     }
 
 # Tool Nodes
-normal_tool_node = ToolNode(normal_tools)
-rotor_tool_node = ToolNode(rotor_tools)
+voiceover_tool_node = ToolNode(voiceover_tools)
 
 
 def stop(state: AgentState) -> AgentState:
