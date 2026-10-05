@@ -1,5 +1,7 @@
 export function createBrowserHandlers({ browserService }) {
   return {
+    // ? check if I need more handlers
+    
     async "browser.start"({ url }) {
       await browserService.start(url);
       return { ok: true };
@@ -15,20 +17,6 @@ export function createBrowserHandlers({ browserService }) {
     async "browser.stop"() {
       await browserService.stop();
       return { ok: true };
-    },
-
-    async "browser.ariaSnapshot"() {
-      return {
-        ok: true,
-        snapshot: await browserService.ariaSnapshot(),
-      };
-    },
-
-    async "browser.activeNodes"() {
-      return {
-        ok: true,
-        elements: await browserService.activeNodes(),
-      };
     },
   };
 }

@@ -58,6 +58,8 @@ args = parser.parse_args()
 
 app = build_graph()
 # app.get_graph().draw_mermaid_png(output_file_path='graph.png')
+
+# TODO change and or standardize for multiple goals and tests
 end_goal = "On this website, find the table for enrollment trends and describe the tend for English majors (detailed as ENG)."
 url = "https://projects.accesscomputing.uw.edu/au/after.html"
 

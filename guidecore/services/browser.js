@@ -42,10 +42,11 @@ export function createBrowserService({ daemonState, commit, logger }) {
       enqueuePageEvent(async () => {
         commit(
           {
-            pageInfo: {
-              ...daemonState.pageInfo,
-              url: page.url(),
-              title: await page.title().catch(() => null),
+            context: {
+              page: {
+                url: page.url(),
+                title: await page.title().catch(() => null),
+              },
             },
           },
           {
@@ -58,15 +59,19 @@ export function createBrowserService({ daemonState, commit, logger }) {
 
     page.on("load", async () => {
       enqueuePageEvent(async () => {
+        const accessibilityState = await collectNodesFromA11yTree();
+
         commit(
           {
-            pageInfo: {
-              ...daemonState.pageInfo,
-              url: page.url(),
-              title: await page.title().catch(() => null),
-              accessibilityTree: await page
-                .ariaSnapshot({ mode: "ai", boxes: true })
-                .catch(() => null),
+            context: {
+              page: {
+                url: page.url(),
+                title: await page.title().catch(() => null),
+              },
+              a11y: {
+                tree: accessibilityState.tree,
+              },
+              relevantNodes: accessibilityState.relevantNodes,
             },
           },
           {
@@ -81,9 +86,11 @@ export function createBrowserService({ daemonState, commit, logger }) {
       commit(
         {
           page: null,
-          context: null,
+          browserContext: null,
           browser: null,
-          ready: false,
+          context: {
+            ready: false,
+          },
         },
         { fromAction: "browser.closed" },
       );
@@ -99,8 +106,8 @@ export function createBrowserService({ daemonState, commit, logger }) {
       headless: false,
       args: ["--start-maximized"],
     });
-    daemonState.context = await daemonState.browser.newContext();
-    daemonState.page = await daemonState.context.newPage();
+    daemonState.browserContext = await daemonState.browser.newContext();
+    daemonState.page = await daemonState.browserContext.newPage();
     bindPageEvents(daemonState.page);
   }
 
@@ -112,11 +119,12 @@ export function createBrowserService({ daemonState, commit, logger }) {
 
     commit(
       {
-        ready: true,
-        pageInfo: {
-          ...daemonState.pageInfo,
-          url: daemonState.page.url(),
-          title: await daemonState.page.title().catch(() => null),
+        context: {
+          ready: true,
+          page: {
+            url: daemonState.page.url(),
+            title: await daemonState.page.title().catch(() => null),
+          },
         },
       },
       { fromAction: "browser.start" },
@@ -128,13 +136,20 @@ export function createBrowserService({ daemonState, commit, logger }) {
 
     commit(
       {
-        ready: false,
-        pageInfo: {
-          ...daemonState.pageInfo,
-          url: null,
-          title: null,
-          accessibilityTree: null,
-          screenshotPath: null,
+        context: {
+          ready: false,
+          page: {
+            url: null,
+            title: null,
+            screenshotPath: null,
+          },
+          a11y: {
+            tree: null,
+          },
+          relevantNodes: {
+            active: [],
+            pressed: [],
+          },
         },
       },
       { fromAction: "browser.stop" },
@@ -158,15 +173,42 @@ export function createBrowserService({ daemonState, commit, logger }) {
     });
   }
 
-  async function activeNodes() {
+  async function collectNodesFromA11yTree() {
+    const page = daemonState.page;
+
+    if (!page) {
+      throw new Error(
+        "Cannot collect accessibility state because no browser page is active",
+      );
+    }
+
     const snapshot = await ariaSnapshot();
+
+    return {
+      tree: snapshot,
+      relevantNodes: {
+        active: findNodesWhereFlagIsTrue(snapshot, "active"), // knowing this is key, because any element on this list, if VO- space is pressed, thats the action to take.
+        pressed: findNodesWhereFlagIsTrue(snapshot, "pressed"),
+
+        // ? maybe in the future if they are useful
+        // selected: findNodesWhereFlagIsTrue(snapshot, "selected"),
+        // checked: findNodesWhereFlagIsTrue(snapshot, "checked"),
+        // expanded: findNodesWhereFlagIsTrue(snapshot, "expanded"),
+        // level: findNodesWhereFlagIsTrue(snapshot, "level"),
+      },
+    };
+  }
+
+  async function activeNodes() {
+    const { relevantNodes } = await collectNodesFromA11yTree();
+
     return [
-      findNodesWhereFlagIsTrue(snapshot, "active"),
-      findNodesWhereFlagIsTrue(snapshot, "pressed"),
-      findNodesWhereFlagIsTrue(snapshot, "selected"),
-      findNodesWhereFlagIsTrue(snapshot, "checked"),
-      findNodesWhereFlagIsTrue(snapshot, "expanded"),
-      findNodesWhereFlagIsTrue(snapshot, "level"),
+      relevantNodes.active,
+      relevantNodes.pressed,
+      // accessibilityNodes.selected,
+      // accessibilityNodes.checked,
+      // accessibilityNodes.expanded,
+      // accessibilityNodes.level,
     ];
   }
 
@@ -175,6 +217,7 @@ export function createBrowserService({ daemonState, commit, logger }) {
     stop,
     viewportLocation,
     ariaSnapshot,
+    collectNodesFromA11yTree,
     activeNodes,
     getPage: () => daemonState.page,
   };

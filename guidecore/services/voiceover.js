@@ -9,7 +9,12 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-export function createVoiceOverService({ daemonState, commit, getPage }) {
+export function createVoiceOverService({
+  daemonState,
+  commit,
+  getPage,
+  collectAccessibilityState,
+}) {
   function resolveMode(fromAction) {
     if (fromAction === "voiceover.stop") {
       return null;
@@ -20,7 +25,7 @@ export function createVoiceOverService({ daemonState, commit, getPage }) {
     if (fromAction.startsWith("voiceover.")) {
       return "normal";
     }
-    return daemonState.voiceOver.mode;
+    return daemonState.context.voiceover.mode;
   }
 
   async function getCursorBounds() {
@@ -36,51 +41,47 @@ end tell
     return stdout.trim();
   }
 
-  async function getCursorDescription() {
-    const repeatLastSpokenPhraseCommand = {
-      keyCode: MacOSKeyCodes.z,
-      modifiers: [
-        MacOSModifiers.Control,
-        MacOSModifiers.Option,
-        MacOSModifiers,
-      ],
-      description: "Repeat Last Spoken Phrase",
-      representation: "VO-Z",
-    };
-    await voiceOver.perform(repeatLastSpokenPhraseCommand).catch(() => null);
-    return voiceOver.lastSpokenPhrase();
-  }
-
   async function refreshState(fromAction, parameters = null) {
+    const page = getPage();
+
+    if (!page) {
+      throw new Error(
+        `Cannot refresh VoiceOver state for ${fromAction}: no browser page is active`,
+      );
+    }
+
     const lastSpokenPhrase = await voiceOver
       .lastSpokenPhrase()
       .catch(() => null);
     const itemTextLog = await voiceOver.itemTextLog().catch(() => []);
+    const accessibilityState = await collectAccessibilityState();
     const pageScreenshotPath = `.././screenshots/${randomUUID()}.jpeg`;
-    await getPage().screenshot({ path: pageScreenshotPath });
+    await page.screenshot({ path: pageScreenshotPath });
     const mode = resolveMode(fromAction);
     const nextRunningState =
       fromAction === "voiceover.start"
         ? true
         : fromAction === "voiceover.stop"
           ? false
-          : daemonState.voiceOver.running;
-    const nextCursorDescription =
-      fromAction === "voiceover.stop" || mode === "rotor"
-        ? null
-        : await getCursorDescription();
+          : daemonState.context.voiceover.running;
 
     commit(
       {
-        pageInfo: {
-          ...daemonState.pageInfo,
-          screenshotPath: pageScreenshotPath,
-        },
-        voiceOver: {
-          ...daemonState.voiceOver,
-          running: nextRunningState,
-          mode,
-          cursorDescription: nextCursorDescription,
+        context: {
+          page: {
+            ...daemonState.context.page,
+            screenshotPath: pageScreenshotPath,
+          },
+          a11y: {
+            tree: accessibilityState.tree,
+          },
+          relevantNodes: accessibilityState.relevantNodes,
+          voiceover: {
+            ...daemonState.context.voiceover,
+            running: nextRunningState,
+            mode,
+            lastSpokenPhrase,
+          },
         },
       },
       {
@@ -95,7 +96,7 @@ end tell
   }
 
   function assertNotRotorMode(action) {
-    if (daemonState.voiceOver.mode === "rotor") {
+    if (daemonState.context.voiceover.mode === "rotor") {
       throw new Error(`${action} is unavailable while rotor is open`);
     }
   }
@@ -140,13 +141,13 @@ end tell
     await refreshState("voiceover.goToWebContent");
   }
 
+  async function shutdown() {
+    await voiceOver.stop();
+  }
+
   async function stop() {
     await voiceOver.stop();
     await refreshState("voiceover.stop");
-  }
-
-  async function shutdown() {
-    await voiceOver.stop();
   }
 
   async function action(name, operation, parameter) {

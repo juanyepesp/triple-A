@@ -12,13 +12,13 @@ export function createVoiceOverHandlers({ voiceOverService }) {
       return { ok: true };
     },
 
-    async "voiceover.goToWebContent"() {
-      await voiceOverService.goToWebContent();
+    async "voiceover.stop"() {
+      await voiceOverService.stop();
       return { ok: true };
     },
 
-    async "voiceover.stop"() {
-      await voiceOverService.stop();
+    async "voiceover.goToWebContent"() {
+      await voiceOverService.goToWebContent();
       return { ok: true };
     },
 

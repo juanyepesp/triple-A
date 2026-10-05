@@ -52,6 +52,7 @@ const voiceOverService = createVoiceOverService({
   daemonState: state.daemonState,
   commit: state.commit,
   getPage: browserService.getPage,
+  collectAccessibilityState: browserService.collectNodesFromA11yTree,
 });
 
 // -----------------------------------------------------------

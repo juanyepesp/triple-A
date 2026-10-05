@@ -12,6 +12,10 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+// the following is legacy code, it is the first version of what i wrote
+// i literally wont delete it because of emotional attachment but also
+// to have a reference and understand what i did before
+
 
 const sessionLogPath = join(
   process.cwd(),
@@ -80,7 +84,6 @@ function commit(patch, event = null) {
 }
 
 function buildSnapshot() {
-  // TODO this is what's sent to the agent, this is the single source of truth.
   return {
     version: daemon_state.version,
     ready: daemon_state.ready,
@@ -198,7 +201,6 @@ async function getVoiceOverCursorDescription() {
   }
   await voiceOver.perform(repeatLastSpokenPhraseCommand).catch(() => null);
 
-  // await voiceOver.perform(VoiceOverCommanderCommands.DESCRIBE_ITEM_IN_VOICEOVER_CURSOR).catch(() => null);
   const itemDescription = await voiceOver.lastSpokenPhrase()
   return itemDescription
 }
@@ -332,7 +334,6 @@ const handlers = {
       innerWidth: window.innerWidth,
       innerHeight: window.innerHeight,
     }));
-    // TODO compare the boxes
     return {ok: true, playwright: viewport};
   },
 
@@ -398,7 +399,7 @@ const handlers = {
   },
 
   async "voiceover.goToWebContent"() {
-    // ! For this command to work properly, you have to set the hot spot to the webcontent
+    // ! for this command to work properly, you have to set the hot spot to the webcontent
     // refer to README.md on project root
     const moveToNextHotspotCommand = {
       keyCode: MacOSKeyCodes.RightSquareBracket,

@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from typing import Any, Optional
 from pprint import pprint
 
+# documentation:
+# this is my testing client. i use it only to check things are going well. it's not crucial to the project at all. (well it is crucial to me anyways)
+
 @dataclass
 class RpcError(Exception):
     code: int
@@ -73,12 +76,32 @@ class GuidepupClient:
     def voiceover_next(self) -> Any:
         return self.call("voiceover.next")
     
+def describe(obj, indent=0):
+    prefix = "  " * indent
 
+    if isinstance(obj, dict):
+        print(f"{prefix}dict ({len(obj)} keys)")
+        for key, value in obj.items():
+            print(f"{prefix}├── {key!r}: ", end="")
+            if isinstance(value, dict):
+                print()
+                describe(value, indent + 1)
+            elif isinstance(value, (list, tuple, set)):
+                print(f"{type(value).__name__} ({len(value)} items)")
+            elif isinstance(value, str):
+                print(f"str (len={len(value)})")
+            else:
+                print(type(value).__name__)
+
+    elif isinstance(obj, (list, tuple, set)):
+        print(f"{type(obj).__name__} ({len(obj)} items)")
+
+    else:
+        print(type(obj).__name__)
 
 client = GuidepupClient()
 
 client.ping()
-
 
 client.call(
     "browser.start",
@@ -87,95 +110,42 @@ client.call(
     }
 )
 
-
-
 client.call(
     "voiceover.start",
 )
 
-# AOM primero
-# res = client.call("browser.activeNodes")
-# print('\nactiveNodes')
-# pprint(res['elements'])
-# input("continue?")
-
-
-
-# # viewport bounds
-# res = client.call(
-#     "browser.viewportLocation"
-# )
-# print('Viewport Bounds')
-# print(res['playwright'])
-
-
 # accion
 client.call("voiceover.goToWebContent")
 print('\nGO TO WEB CONTENT')
-# res = client.call("browser.activeNodes")
-# print('\nactiveNodes')
-# pprint(res['elements'])
 input("continue?")
 
-
-# # snapshot
-# res = client.call("daemonstate.snapshot")
-# print('--------------------------------------------------')
-# print('\nVO utterance:', res['daemon_state']['voiceOver']['cursorDescription'])
-
-# # bounds
-# res = client.call(
-#     "voiceover.cursorLocation"
-# )
-# print(res)
-
-
-# accion
 res = client.call(
     "voiceover.startInteracting"
 )
 print('\nSTART INTERACTING')
-# res = client.call("browser.activeNodes")
-# print('\nactiveNodes')
-# pprint(res['elements'])
 input("continue?")
-
-
-
-# # snapshot
-# res = client.call("daemonstate.snapshot")
-# print('--------------------------------------------------')
-# print('\nVO utterance:', res['daemon_state']['voiceOver']['cursorDescription'])
-
-# # bounds
-# res = client.call(
-#     "voiceover.cursorLocation"
-# )
-# print(res)
+action = 'next'
 
 while True:
 # accion
-    res = client.call(
-        "voiceover.next"
-    )
-    print('\nNEXT')
+    if action == 'next': 
+        res = client.call(
+            "voiceover.next"
+        )
+    elif action == 'prev': 
+        res = client.call(
+            "voiceover.previous"
+        )
+    elif action == 'start': 
+        res = client.call(
+            "voiceover.startInteracting"
+        )
     res = client.call("daemonstate.snapshot")
-    print('\nVO utterance:', res['daemon_state']['voiceOver']['cursorDescription'])
-    res = client.call("browser.activeNodes")
-    print('\nactiveNodes')
-    pprint(res['elements'])
-    input("continue?")
-
-
-# # client.call("voiceover.next")
-# # print('h')
-
-# # snap = client.call("daemonstate.snapshot")
-# # print('i', snap)
-
-# # # client.call("voiceover.next")
-# # # client.call("voiceover.next")
-
+    print('\nVO info:')
+    describe(res)
+    action = input("say action?")
+    if action == '':
+        action = 'next'
 
 # # client.call(
 # #     "voiceover.stop",
