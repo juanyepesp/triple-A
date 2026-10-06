@@ -167,6 +167,8 @@ while True:
     print('-'*30)
     describe(res)
     print('-'*30)
+    describe(res['daemon_state']['context']['relevantNodes'])
+    print('-'*30)
     pprint(res['daemon_state']['context']['browserFocus'])
     print('-'*30)
     pprint(res['daemon_state']['context']['voiceoverFocus'])

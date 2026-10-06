@@ -11,22 +11,23 @@ const LANDMARK_ROLES = new Set([
   "search",
 ]);
 
-const INTERACTIVE_ROLES = new Set([
-  "button",
-  "checkbox",
-  "combobox",
-  "link",
-  "listbox",
-  "menuitem",
-  "option",
-  "radio",
-  "searchbox",
-  "slider",
-  "spinbutton",
-  "switch",
-  "tab",
-  "textbox",
-]);
+const HEADING_ROLES = new Set(["heading"]);
+const LINK_ROLES = new Set(["link"]);
+
+function getA11yStructure(node) {
+  if (Array.isArray(node)) {
+    return node.map(getA11yStructure);
+  }
+
+  if (!node || typeof node !== "object") {
+    return null;
+  }
+
+  return {
+    role: node.role ?? null,
+    children: (node.children ?? []).map(getA11yStructure),
+  };
+}
 
 function findNodesWhereFlagIsTrue(tree, flag) {
   const results = [];
@@ -149,6 +150,21 @@ function findActivePath(tree) {
 
 export function createBrowserService({ daemonState, commit, logger }) {
   let pageEventQueue = Promise.resolve();
+  let a11yStructure = null;
+  let cachedA11yElements = {
+    landmarks: [],
+    headings: [],
+    links: [],
+  };
+
+  function resetA11yStructure() {
+    a11yStructure = null;
+    cachedA11yElements = {
+      landmarks: [],
+      headings: [],
+      links: [],
+    };
+  }
 
   function bindPageEvents(page) {
     function enqueuePageEvent(task) {
@@ -217,6 +233,7 @@ export function createBrowserService({ daemonState, commit, logger }) {
     });
 
     page.on("close", () => {
+      resetA11yStructure();
       commit(
         {
           page: null,
@@ -231,7 +248,8 @@ export function createBrowserService({ daemonState, commit, logger }) {
               active: [],
               pressed: [],
               landmarks: [],
-              interactive: [],
+              headings: [],
+              links: [],
             },
             page: {
               viewportLocation: null,
@@ -266,6 +284,7 @@ export function createBrowserService({ daemonState, commit, logger }) {
 
   async function start(url) {
     await ensureBrowser();
+    resetA11yStructure();
     await daemonState.page.goto(url, { waitUntil: "load" });
 
     await pageEventQueue;
@@ -293,6 +312,7 @@ export function createBrowserService({ daemonState, commit, logger }) {
   }
 
   async function stop() {
+    resetA11yStructure();
     await daemonState.browser.close();
 
     commit(
@@ -312,7 +332,8 @@ export function createBrowserService({ daemonState, commit, logger }) {
             active: [],
             pressed: [],
             landmarks: [],
-            interactive: [],
+            headings: [],
+            links: [],
           },
           browserFocus: null,
           focusComparison: {
@@ -358,6 +379,18 @@ export function createBrowserService({ daemonState, commit, logger }) {
 
     const snapshot = await ariaSnapshot();
     const activeNodes = findNodesWhereFlagIsTrue(snapshot, "active");
+    const nextA11yStructure = getA11yStructure(snapshot);
+    const structureChanged =
+      JSON.stringify(nextA11yStructure) !== JSON.stringify(a11yStructure);
+
+    if (structureChanged) {
+      cachedA11yElements = {
+        landmarks: findNodesByRole(snapshot, LANDMARK_ROLES),
+        headings: findNodesByRole(snapshot, HEADING_ROLES),
+        links: findNodesByRole(snapshot, LINK_ROLES),
+      };
+      a11yStructure = nextA11yStructure;
+    }
     const viewportLocation = await page.evaluate(() => ({
       screenX: window.screenX,
       screenY: window.screenY,
@@ -372,8 +405,7 @@ export function createBrowserService({ daemonState, commit, logger }) {
       relevantNodes: {
         active: activeNodes, // knowing this is key, because any element on this list, if VO- space is pressed, thats the action to take.
         pressed: findNodesWhereFlagIsTrue(snapshot, "pressed"),
-        landmarks: findNodesByRole(snapshot, LANDMARK_ROLES),
-        interactive: findNodesByRole(snapshot, INTERACTIVE_ROLES),
+        ...cachedA11yElements,
       },
       cursorPath: findActivePath(snapshot),
       browserFocus: activeNodes[0]

@@ -287,28 +287,18 @@ end tell
   }
 
   async function goToWebContent() {
-    // ! for this function to work, you need to set the web content inside chrome as the first shortcut
-    const nextHotSpotCommand = {
-      keyCode: MacOSKeyCodes.RightSquareBracket,
-      modifiers: [
-        MacOSModifiers.Control,
-        MacOSModifiers.Option,
-        MacOSModifiers.Shift,
-      ],
-      description: "Move to next hot spot",
-      representation: "VO-Shift-}",
-    };
-    await voiceOver.perform(nextHotSpotCommand);
+    await voiceOver.perform(voiceOver.commanderCommands.GO_TO_TOP_OF_WINDOW);
+    await voiceOver.perform(voiceOver.commanderCommands.GO_TO_BOTTOM_OF_WINDOW);
     await refreshState("voiceover.goToWebContent");
-  }
-
-  async function shutdown() {
-    await voiceOver.stop();
   }
 
   async function stop() {
     await voiceOver.stop();
     await refreshState("voiceover.stop");
+  }
+
+  async function shutdown() {
+    await voiceOver.stop();
   }
 
   async function action(name, operation, parameter) {

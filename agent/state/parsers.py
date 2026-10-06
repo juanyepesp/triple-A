@@ -80,20 +80,6 @@ def describe(obj, indent=0):
 # ["You are currently on a _. To interact with this item ...", ...]
 
 
-# PAGE LANDMARKS
-# TODO check where I can get this information
-# - banner
-# - navigation "Demo site menu"
-# - main
-# - contentinfo
-
-# INTERACTIVE ELEMENTS
-# TODO check where i can get this information
-# - link "Home"
-# - link "Before"
-# - link "After"
-# - textbox "Search"
-# - button "Submit"
 
 
 def parse_daemon_snapshot(raw: dict) -> DaemonSnapshot:

@@ -32,7 +32,8 @@ function createDaemonState() {
         active: [],
         pressed: [],
         landmarks: [],
-        interactive: [],
+        headings: [],
+        links: [],
       },
       a11y: {
         tree: null, // TODO this needs to return only relevant nodes, not all of them because it will become a mess
@@ -118,7 +119,8 @@ export function createStateManager({ logger }) {
           active: [...daemonState.context.relevantNodes.active],
           pressed: [...daemonState.context.relevantNodes.pressed],
           landmarks: [...daemonState.context.relevantNodes.landmarks],
-          interactive: [...daemonState.context.relevantNodes.interactive],
+          headings: [...daemonState.context.relevantNodes.headings],
+          links: [...daemonState.context.relevantNodes.links],
         },
         a11y: { ...daemonState.context.a11y },
         voiceover: { ...daemonState.context.voiceover },

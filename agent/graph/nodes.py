@@ -20,6 +20,7 @@ voiceover_tools_model = model.bind_tools(voiceover_tools)
 def bootstrap(state: AgentState)-> AgentState:
     '''This node sets up the browser, the screen reader, makes sure everything works correctly'''
 
+    # TODO revisar que siempre entre al web content, no seguir hasta que no se encuentre bien setup
     state['goal_reached'] = False
     state["iteration"] = 0
 
@@ -29,6 +30,7 @@ def bootstrap(state: AgentState)-> AgentState:
         )
         guidecore.voiceover_start()
         guidecore.voiceover_go_to_web_content()
+        guidecore.voiceover_start_interacting()
 
     except Exception as e:
         raise RuntimeError(

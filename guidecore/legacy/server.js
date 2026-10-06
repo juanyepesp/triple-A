@@ -401,14 +401,16 @@ const handlers = {
   async "voiceover.goToWebContent"() {
     // ! for this command to work properly, you have to set the hot spot to the webcontent
     // refer to README.md on project root
-    const moveToNextHotspotCommand = {
-      keyCode: MacOSKeyCodes.RightSquareBracket,
-      modifiers: [MacOSModifiers.Control, MacOSModifiers.Option, MacOSModifiers.Shift],
-      description: "Move to next hot spot",
-      representation: "VO-Shift-}"
-    }
-    await voiceOver.perform(moveToNextHotspotCommand);
-    await refreshVoiceOverState('voiceover.setup');
+    // const moveToNextHotspotCommand = {
+    //   keyCode: MacOSKeyCodes.RightSquareBracket,
+    //   modifiers: [MacOSModifiers.Control, MacOSModifiers.Option, MacOSModifiers.Shift],
+    //   description: "Move to next hot spot",
+    //   representation: "VO-Shift-}"
+    // }
+    // await voiceOver.perform(moveToNextHotspotCommand);
+    await voiceOver.perform(voiceOver.commanderCommands.GO_TO_TOP_OF_WINDOW);
+    await voiceOver.perform(voiceOver.commanderCommands.GO_TO_BOTTOM_OF_WINDOW);
+    await refreshVoiceOverState('voiceover.goToWebContent');
     return { ok: true }
   },
 
@@ -436,7 +438,7 @@ const handlers = {
 
   async "voiceover.startInteracting"({ }) {
     // entering a group, VO-Shift-DownArrow
-    assertNotRotorMode("voiceover.startInteracting")
+    assertNotRotorMode("voiceover.startInteracting") // TODO no more asserting not rotor, more like asserting not in menu
     await voiceOver.perform(voiceOver.commanderCommands.START_INTERACTING_WITH_ITEM);
     await refreshVoiceOverState('voiceover.startInteracting');
     return { ok: true };
