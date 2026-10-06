@@ -9,6 +9,7 @@ sync_now() {
     rsync -az \
         --delete \
         --exclude='.git/' \
+        --exclude='.git' \
         --exclude='venv/' \
         --exclude='node_modules/' \
         --exclude='vision_outputs/' \

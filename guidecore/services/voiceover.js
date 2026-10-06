@@ -44,9 +44,8 @@ function containsCue(text, cue) {
 function resolveWebContentScope(
   currentValue,
   lastSpokenPhrase,
+  itemTextLog = [],
 ) {
-  const spokenText = normalizeText(lastSpokenPhrase);
-
   const outsideCues = [
     "google chrome",
     "chrome",
@@ -85,11 +84,26 @@ function resolveWebContentScope(
     "list",
   ];
 
-  if (outsideCues.some((cue) => containsCue(spokenText, cue))) {
+  const observations = [
+    lastSpokenPhrase,
+    ...(Array.isArray(itemTextLog) ? itemTextLog.slice(-1) : []),
+  ]
+    .map(normalizeText)
+    .filter(Boolean);
+
+  if (
+    observations.some((text) =>
+      outsideCues.some((cue) => containsCue(text, cue)),
+    )
+  ) {
     return true;
   }
 
-  if (insideCues.some((cue) => containsCue(spokenText, cue))) {
+  if (
+    observations.some((text) =>
+      insideCues.some((cue) => containsCue(text, cue)),
+    )
+  ) {
     return false;
   }
 
@@ -197,6 +211,7 @@ end tell
     const isOutsideWebContent = resolveWebContentScope(
       daemonState.context.voiceoverFocus.isOutsideWebContent,
       lastSpokenPhrase,
+      itemTextLog,
     );
 
     commit(
