@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import pino, { destination as createDestination } from "pino";
 // handlers
@@ -19,6 +19,7 @@ import { createVoiceOverService } from "./services/voiceover.js";
 
 const socketPath = "/tmp/guidecore.sock";
 const logsDirectory = join(process.cwd(), "logs");
+const screenshotsDirectory = join(process.cwd(), "..", "screenshots");
 const sessionLogPath = join(
   logsDirectory,
   `logs-${process.pid}-${Date.now()}.log`,
@@ -93,8 +94,12 @@ async function shutdown() {
     logger.error({ err }, "Failed to stop VoiceOver during shutdown");
   }
 
-  await rpcServer.close();
-  process.exit(0);
+  try {
+    await rpcServer.close();
+  } finally {
+    rmSync(screenshotsDirectory, { recursive: true, force: true });
+    process.exit(0);
+  }
 }
 
 process.on("SIGINT", shutdown);

@@ -1,8 +1,6 @@
 from langchain_core.tools import tool
 from tools import actions
 
-# TODO revisar las descripciones de texto, estas afectan el prompting
-# TODO ponerles los hotkeys para que identifique de lo que voiceover dice
 
 @tool
 def voiceover_next() -> str:
@@ -48,10 +46,16 @@ def voiceover_go_to_web_content() -> str:
     return actions.voiceover_go_to_web_content()
 
 
-# TODO
-# @tool
-def voiceover_type() -> str:
-    return
+@tool
+def voiceover_escape() -> str:
+    """Press Escape in VoiceOver to leave the current interaction."""
+    return actions.voiceover_escape()
+
+
+@tool
+def voiceover_type(text: str) -> str:
+    """Type text into the currently focused VoiceOver item."""
+    return actions.voiceover_type(text)
 
 @tool
 def voiceover_next_heading() -> str:
@@ -98,4 +102,6 @@ voiceover_tools = [
     voiceover_start_interacting,
     voiceover_stop_interacting,
     voiceover_go_to_web_content,
+    voiceover_escape,
+    voiceover_type,
 ]

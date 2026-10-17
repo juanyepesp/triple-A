@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from typing import Any
-from .client import GuidepupClient
+from .client import GuidecoreClient
 
-client = GuidepupClient()
+client = GuidecoreClient()
 
 def snapshot() -> dict[str, Any]:
     return client.call("daemonstate.snapshot")
@@ -56,5 +56,5 @@ def voiceover_stop_interacting() -> Any:
 def voiceover_escape() -> Any:
     return client.call("voiceover.escape")
 
-def voiceover_press(key: str) -> Any:
-    return client.call("voiceover.press", {"key": key})
+def voiceover_type(text: str) -> Any:
+    return client.call("voiceover.type", {"text": text})

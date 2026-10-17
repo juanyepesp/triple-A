@@ -15,7 +15,7 @@ class ClientError(Exception):
         return f"{self.code}: {self.message}"
 
 
-class GuidepupClient:
+class GuidecoreClient:
     def __init__(self, path: str = "/tmp/guidecore.sock") -> None:
         self.path = path
         self.sock: Optional[socket.socket] = None

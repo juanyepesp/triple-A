@@ -57,11 +57,6 @@ export function createVoiceOverHandlers({ voiceOverService }) {
       return { ok: true };
     },
 
-    async "voiceover.press"({ key }) {
-      await voiceOverService.press(key);
-      return { ok: true };
-    },
-
     async "voiceover.nextHeading"() {
       await voiceOverService.nextHeading();
       return { ok: true };

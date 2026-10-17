@@ -18,7 +18,7 @@ class RpcError(Exception):
         return f"{self.code}: {self.message}"
 
 
-class GuidepupClient:
+class GuidecoreClient:
     def __init__(self, path: str = "/tmp/guidecore.sock") -> None:
         self.path = path
         self.sock: Optional[socket.socket] = None
@@ -99,7 +99,7 @@ def describe(obj, indent=0):
     else:
         print(type(obj).__name__)
 
-client = GuidepupClient()
+client = GuidecoreClient()
 
 client.ping()
 

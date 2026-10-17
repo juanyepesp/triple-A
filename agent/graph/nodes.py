@@ -1,4 +1,4 @@
-from state.schema import AgentState, Perception, Evaluation
+from state.schema import AgentState, Perception, Evaluation, ActionRecord, TransitionSummary
 from prompts.load import load_prompt
 from tools import actions as guidecore
 from tools.voiceover import voiceover_tools
@@ -6,21 +6,35 @@ from tools.image_processing import (apply_impairment, encode_jpeg, image_changed
 from state.parsers import parse_daemon_snapshot
 
 from langchain_openai import ChatOpenAI
+from langchain_core.exceptions import OutputParserException
 from langgraph.prebuilt import ToolNode
+from pydantic import ValidationError
 
 model = ChatOpenAI(
     model="gpt-4.1-nano",
     temperature=0,
 )
 
-perception_model = model.with_structured_output(Perception)
-evaluation_model = model.with_structured_output(Evaluation)
+perception_model = model.with_structured_output(
+    Perception,
+    method="function_calling",
+).with_retry(
+    retry_if_exception_type=(ValidationError, OutputParserException),
+    stop_after_attempt=3,
+    wait_exponential_jitter=False,
+)
+evaluation_model = model.with_structured_output(
+    Evaluation,
+    method="function_calling",
+).with_retry(
+    retry_if_exception_type=(ValidationError, OutputParserException),
+    stop_after_attempt=3,
+    wait_exponential_jitter=False,
+)
 voiceover_tools_model = model.bind_tools(voiceover_tools)
 
 def bootstrap(state: AgentState)-> AgentState:
     '''This node sets up the browser, the screen reader, makes sure everything works correctly'''
-
-    # TODO revisar que siempre entre al web content, no seguir hasta que no se encuentre bien setup
     state['goal_reached'] = False
     state["iteration"] = 0
 
@@ -30,7 +44,6 @@ def bootstrap(state: AgentState)-> AgentState:
         )
         guidecore.voiceover_start()
         guidecore.voiceover_go_to_web_content()
-        guidecore.voiceover_start_interacting()
 
     except Exception as e:
         raise RuntimeError(
@@ -43,8 +56,58 @@ def snapshot(state: AgentState)-> AgentState:
     '''
     This node takes the snapshot of the current state.
     '''
-    state['snapshot'] = parse_daemon_snapshot(guidecore.snapshot())
+    previous = state.get("snapshot")
+    current = parse_daemon_snapshot(guidecore.snapshot())
+    if state.get("last_action") and state.get("messages"):
+        latest_message = state["messages"][-1]
+        if latest_message.type == "tool":
+            action = {
+                **state["last_action"],
+                "result": str(latest_message.content),
+            }
+            state["last_action"] = action
+            history = state.get("action_history", [])
+            state["action_history"] = [*history[:-1], action] if history else [action]
+    state["snapshot"] = current
+    state["transition"] = build_transition(previous, current, state.get("last_action"))
     return state
+
+
+def build_transition(
+    previous: dict | None,
+    current: dict,
+    last_action: ActionRecord | None,
+) -> TransitionSummary:
+    previous_context = (previous or {}).get("context", {})
+    current_context = current["context"]
+    previous_focus = previous_context.get("voiceoverFocus", {})
+    current_focus = current_context.get("voiceoverFocus", {})
+    previous_path = previous_context.get("cursorPath", [])
+    current_path = current_context.get("cursorPath", [])
+    previous_active = (previous_context.get("relevantNodes", {}).get("active") or [])
+    current_active = (current_context.get("relevantNodes", {}).get("active") or [])
+    previous_role = previous_active[0].get("role") if previous_active else None
+    current_role = current_active[0].get("role") if current_active else None
+    previous_phrase = previous_focus.get("lastSpokenPhrase")
+    current_phrase = current_focus.get("lastSpokenPhrase")
+
+    return {
+        "action": last_action["name"] if last_action else None,
+        "previous_phrase": previous_phrase,
+        "current_phrase": current_phrase,
+        "previous_role": previous_role,
+        "current_role": current_role,
+        "previous_cursor_path": previous_path,
+        "current_cursor_path": current_path,
+        "state_changed": (
+            previous is not None
+            and (
+                previous_phrase != current_phrase
+                or previous_role != current_role
+                or previous_path != current_path
+            )
+        ),
+    }
 
 def vision(state: AgentState)-> AgentState:
     '''
@@ -52,7 +115,7 @@ def vision(state: AgentState)-> AgentState:
     sends the picture to an LLM for description.
     '''
     screenshot_path, image = load_screenshot(
-        state["snapshot"]["screenshot_path"],
+        state["snapshot"]["context"]["page"]["screenshotPath"],
         state.get("screenshot_runtime_dir"),
     )
     current_hash = image_hash(image)
@@ -74,7 +137,10 @@ def vision(state: AgentState)-> AgentState:
             "content": [
                 {
                     "type": "text",
-                    "text": f"Impairment simulation: {impairment} \nWebsite URL: {state['snapshot']['page_url']}",
+                    "text": (
+                        f"Impairment simulation: {impairment} \n"
+                        f"Website URL: {state['snapshot']['context']['page']['url']}"
+                    ),
                 },
                 {
                     "type": "image_url",
@@ -133,31 +199,8 @@ def perception(state: AgentState)-> AgentState:
     # state['snapshot']['possibilities'] = 'From here we can go to these headings:[] links:[] or move to these places[] '
 
     system_prompt = load_prompt("perception.md")
-
-    # user_input = f""" # TODO change this
-    #     Current goal:
-
-    #     {state["goal"]}
-
-    #     Current daemon snapshot:
-
-    #     {state["snapshot"]}
-        
-    #     Current vision description, with visual impairment {state['impairment']}:
-        
-    #     {state['vision']}
-    # """
     
-    user_input = f"""
-        The ultimate goal to tackle: {state['goal']}
-        
-        VoiceOver information: {state['snapshot']['voiceover']}
-        
-        Page title: {state['snapshot']['page_title']}
-        Current URL: {state['snapshot']['page_url']}
-        
-        Page description with {state['impairment']} impairment: {state['vision']}
-    """
+    user_input = format_evidence(state)
     
 
     result = perception_model.invoke([
@@ -220,7 +263,15 @@ def evaluation(state: AgentState)-> AgentState:
 
     Current perception:
 
-    {state["perception"]}
+    {state["perception"].model_dump_json(indent=2)}
+
+    Last action:
+
+    {state.get("last_action")}
+
+    Transition since the previous snapshot:
+
+    {state.get("transition")}
 
     Iteration:
 
@@ -238,7 +289,7 @@ def evaluation(state: AgentState)-> AgentState:
         },
     ])
 
-    state['goal_reached'] = result['goal_reached']
+    state['goal_reached'] = result.goal_reached
     
     state["evaluation"] = result
 
@@ -262,25 +313,33 @@ def decision(state: AgentState) -> AgentState:
     {state["goal"]}
 
     Current perception:
-    {state["perception"]}
+    {state["perception"].model_dump_json(indent=2)}
 
     Current evaluation:
-    {state["evaluation"]}
+    {state["evaluation"].model_dump_json(indent=2)}
+
+    Current daemon evidence:
+
+    {format_evidence(state)}
 
     """,
         },
     ]
 
-    messages.extend(state["messages"])
-
     response = voiceover_tools_model.invoke(messages)
     
-    print("\n=== DECISION RAW RESPONSE ===")
-    print(response)
-    print("TOOL CALLS:", response.tool_calls)
-    print("CONTENT:", response.content)
-    print("INVALID TOOL CALLS:", response.invalid_tool_calls)
-    print("FINISH REASON:", response.response_metadata.get("finish_reason"))
+    if response.tool_calls:
+        tool_call = response.tool_calls[0]
+        action = {
+            "name": tool_call["name"],
+            "arguments": tool_call.get("args", {}),
+            "result": None,
+        }
+        return {
+            "messages": [response],
+            "last_action": action,
+            "action_history": [*state.get("action_history", []), action],
+        }
 
     return {
         "messages": [response]
@@ -314,11 +373,11 @@ def report(state: AgentState) -> AgentState:
 
     Evaluation:
 
-    {state["evaluation"]}
+    {state["evaluation"].model_dump_json(indent=2)}
 
     Actions taken:
 
-    {state["execution_results"]}
+    {state.get("action_history", [])}
     """
 
     result = model.invoke([
@@ -335,3 +394,46 @@ def report(state: AgentState) -> AgentState:
     state["final_summary"] = result.content
 
     return state
+
+
+def format_evidence(state: AgentState) -> str:
+    """Render the compact, authoritative evidence packet for LLM nodes."""
+    context = state["snapshot"]["context"]
+    page = context["page"]
+    voiceover_focus = context["voiceoverFocus"]
+    relevant = context["relevantNodes"]
+    return f"""
+GOAL
+{state["goal"]}
+
+PAGE
+Title: {page.get("title")}
+URL: {page.get("url")}
+
+VOICEOVER
+Running: {context["voiceover"].get("running")}
+Last spoken phrase: {voiceover_focus.get("lastSpokenPhrase")}
+Item text log: {voiceover_focus.get("itemTextLog", [])}
+Outside web content: {voiceover_focus.get("isOutsideWebContent")}
+
+BROWSER FOCUS
+{context.get("browserFocus")}
+
+CURSOR PATH
+{context.get("cursorPath", [])}
+
+FOCUS COMPARISON
+{context.get("focusComparison")}
+
+RELEVANT NODES
+Active: {relevant.get("active", [])}
+Landmarks: {relevant.get("landmarks", [])}
+Headings: {relevant.get("headings", [])}
+Links: {relevant.get("links", [])}
+
+ACCESSIBILITY TREE
+{context.get("a11y", {}).get("tree")}
+
+VISUAL DESCRIPTION
+{state.get("vision", {}).get("description")}
+""".strip()

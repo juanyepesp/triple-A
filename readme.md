@@ -63,6 +63,40 @@ When the test Chrome window opens, pause the agent and configure the VoiceOver h
 1. Use VoiceOver to move to the web content until it announces “web content”.
 2. Set that location as hotspot 1 with `VO + Shift + 1`.
 
+## Review tasks side by side
+
+To manually check whether a student's task is supported by the website, open the
+first website and task/checklist in two side-by-side Google Chrome windows:
+
+```zsh
+python notebooks/review_tasks.py
+```
+
+The script reads `notebooks/data/website-task-bank.csv`, starts at row 1, and
+places the website on the left and the task on the right. Use these commands
+while reviewing:
+
+- `n`: save edits if needed and move to the next task
+- `p`: move to the previous task
+- `e`: edit the task goal or the student's reported completion
+- `s`: save all edits to the CSV
+- `q`: quit, with a save prompt if there are unsaved edits
+
+To start at a particular task:
+
+```zsh
+python notebooks/review_tasks.py --row 12
+```
+
+The CSV is read and written as UTF-8 (with optional UTF-8 BOM support), so
+Spanish accents and other non-ASCII characters are preserved. Saving replaces
+the CSV only after the complete temporary file has been written.
+
+The default screen size is 1440x900. Override it when needed with
+`--screen-width` and `--screen-height`. Chromium can be used instead of Chrome
+with `--browser Chromium`. This reviewer is independent of the Guidecore daemon
+and is intended for manual task-quality checking; it does not change the CSV.
+
 
 ## Recommendations
 

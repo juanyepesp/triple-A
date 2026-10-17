@@ -337,6 +337,5 @@ end tell
         voiceOver.perform(voiceOver.commanderCommands.ESCAPE),
       ),
     type: (text) => action("voiceover.type", () => type(text), text),
-    press: (key) => action("voiceover.press", () => voiceOver.press(key), key),
   };
 }
