@@ -147,7 +147,13 @@ def main():
 
     browser_started = False
     voiceover_started = False
+    recording_started = False
     try:
+        recording = client.call(
+            "recording.start",
+            {"url": args.url, "impairment": args.impairment},
+        )
+        recording_started = True
         client.call(
             "browser.start",
             {"url": args.url, "impairment": args.impairment},
@@ -155,11 +161,17 @@ def main():
         browser_started = True
         client.call("voiceover.start", {"mode": "human"})
         voiceover_started = True
+        print(
+            f"Recording interactions to {recording['recording']['path']}",
+            flush=True,
+        )
     except Exception:
         if voiceover_started:
             client.call("voiceover.stop")
         if browser_started:
             client.call("browser.stop")
+        if recording_started:
+            client.call("recording.stop")
         commands.put(None)
         client.close()
         raise
@@ -177,6 +189,12 @@ def main():
                 client.call("voiceover.stop")
             if browser_started:
                 client.call("browser.stop")
+            if recording_started:
+                recording = client.call("recording.stop")
+                print(
+                    f"Recording saved to {recording['recording']['path']}",
+                    flush=True,
+                )
         finally:
             commands.put(None)
             worker.join(timeout=2)

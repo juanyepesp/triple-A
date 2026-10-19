@@ -91,10 +91,10 @@ capture or a screenshot refresh, and repeated pending arrow commands are
 coalesced so stale navigation does not build up. Press `Ctrl+C` to stop
 VoiceOver and the browser.
 
-If an interaction recording is also desired, start it separately through the
-recording RPC API before using this controller. The resulting VoiceOver RPC
-actions are recorded as agent actions; the controller does not persist raw
-keyboard events.
+The controller automatically starts an interaction recording with the supplied
+URL and impairment. Every resulting VoiceOver RPC action is recorded in the
+JSONL file as an agent-originated action; raw terminal input is not persisted.
+The output path is printed when recording starts and when it is finalized.
 
 The controller reads the SSH terminal's stdin rather than using a global
 keyboard listener, so it does not depend on macOS Input Monitoring or
