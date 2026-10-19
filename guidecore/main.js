@@ -12,6 +12,7 @@ import { createStateManager } from "./state/daemon-state.js";
 // services
 import { createBrowserService } from "./services/browser.js";
 import { createVoiceOverService } from "./services/voiceover.js";
+import { createRecorder } from "./services/recorder.js";
 
 // -----------------------------------------------------------
 // GLOBALS
@@ -24,6 +25,7 @@ const sessionLogPath = join(
   logsDirectory,
   `logs-${process.pid}-${Date.now()}.log`,
 );
+const recordingsDirectory = join(process.cwd(), "recordings");
 
 mkdirSync(logsDirectory, { recursive: true });
 
@@ -31,6 +33,7 @@ const logger = pino(
   { name: "guidecore-daemon" },
   createDestination(sessionLogPath),
 );
+const recorder = createRecorder({ recordingsDirectory, logger });
 
 // -----------------------------------------------------------
 // STATE
@@ -66,7 +69,8 @@ const voiceOverService = createVoiceOverService({
 
 const handlers = {
   ...createCoreHandlers({
-  buildSnapshot: state.buildSnapshot,
+    buildSnapshot: state.buildSnapshot,
+    recorder,
   }),
   ...createBrowserHandlers({ browserService }),
   ...createVoiceOverHandlers({ voiceOverService }),
@@ -81,6 +85,7 @@ const rpcServer = createRpcServer({
   socketPath,
   handlers,
   logger,
+  onAction: recorder.recordAgentAction,
 });
 
 async function start() {
@@ -98,6 +103,11 @@ async function shutdown() {
   try {
     await rpcServer.close();
   } finally {
+    try {
+      recorder.shutdown();
+    } catch (err) {
+      logger.error({ err }, "Failed to stop interaction recording");
+    }
     rmSync(screenshotsDirectory, { recursive: true, force: true });
     process.exit(0);
   }

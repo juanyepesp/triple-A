@@ -173,6 +173,8 @@ export function createVoiceOverService({
   collectAccessibilityState,
   captureScreenshot,
 }) {
+  let sessionOptions = { capture: true, refresh: true };
+
   async function getCursorBounds() {
     const script = `
 tell application "VoiceOver"
@@ -276,15 +278,29 @@ end tell
     }
   }
 
-  async function start() {
+  async function start({ mode = "agent" } = {}) {
+    if (mode !== "agent" && mode !== "human") {
+      throw new Error(`Unsupported VoiceOver mode: ${mode}`);
+    }
+    sessionOptions =
+      mode === "human"
+        ? { capture: false, refresh: false }
+        : { capture: true, refresh: true };
     await voiceOver.start({
-      capture: true,
+      capture: sessionOptions.capture,
       retries: 3,
       timeout: 10000,
     });
     await voiceOver.clearItemTextLog();
     await voiceOver.clearSpokenPhraseLog();
-    await refreshState("voiceover.start");
+    if (sessionOptions.refresh) {
+      await refreshState("voiceover.start");
+    } else {
+      commit({ context: { voiceover: { running: true } } }, {
+        fromAction: "voiceover.start",
+        mode,
+      });
+    }
   }
 
   async function goToWebContent() {
@@ -295,16 +311,30 @@ end tell
 
   async function stop() {
     await voiceOver.stop();
-    await refreshState("voiceover.stop");
+    if (sessionOptions.refresh) {
+      await refreshState("voiceover.stop");
+    } else {
+      commit({ context: { voiceover: { running: false } } }, {
+        fromAction: "voiceover.stop",
+      });
+    }
   }
 
   async function shutdown() {
     await voiceOver.stop();
   }
 
-  async function action(name, operation, parameter) {
-    await operation();
-    await refreshState(name, parameter);
+  async function action(
+    name,
+    operation,
+    parameter,
+    options = sessionOptions,
+  ) {
+    const { capture, refresh } = { ...sessionOptions, ...options };
+    await operation({ capture });
+    if (refresh) {
+      await refreshState(name, parameter);
+    }
   }
 
   return {
@@ -313,30 +343,55 @@ end tell
     goToWebContent,
     stop,
     shutdown,
-    next: () => action("voiceover.next", () => voiceOver.next()),
-    previous: () => action("voiceover.previous", () => voiceOver.previous()),
-    nextHeading: () => action("voiceover.nextHeading", () => voiceOver.nextHeading()),
-    previousHeading: () => action("voiceover.previousHeading",() => voiceOver.previousHeading()),
-    nextLandmark: () => action("voiceover.nextLandmark", () => voiceOver.nextLandmark()),
-    previousLandmark: () => action("voiceover.previousLandmark", () => voiceOver.previousLandmark()),
-    nextLink: () => action("voiceover.nextLink", () => voiceOver.nextLink()),
-    previousLink: () => action("voiceover.previousLink", () => voiceOver.previousLink(),),
+    next: () =>
+      action("voiceover.next", (options) => voiceOver.next(options)),
+    previous: () =>
+      action("voiceover.previous", (options) => voiceOver.previous(options)),
+    nextHeading: () =>
+      action("voiceover.nextHeading", (options) => voiceOver.nextHeading(options)),
+    previousHeading: () =>
+      action("voiceover.previousHeading", (options) => voiceOver.previousHeading(options)),
+    nextLandmark: () =>
+      action("voiceover.nextLandmark", (options) => voiceOver.nextLandmark(options)),
+    previousLandmark: () =>
+      action("voiceover.previousLandmark", (options) => voiceOver.previousLandmark(options)),
+    nextLink: () =>
+      action("voiceover.nextLink", (options) => voiceOver.nextLink(options)),
+    previousLink: () =>
+      action("voiceover.previousLink", (options) => voiceOver.previousLink(options)),
     startInteracting: () =>
-      action("voiceover.startInteracting", () =>
-        voiceOver.perform(voiceOver.commanderCommands.START_INTERACTING_WITH_ITEM),
+      action("voiceover.startInteracting", (options) =>
+        voiceOver.perform(
+          voiceOver.commanderCommands.START_INTERACTING_WITH_ITEM,
+          options,
+        ),
       ),
     stopInteracting: () =>
-      action("voiceover.stopInteracting", () => voiceOver.stopInteracting()),
+      action("voiceover.stopInteracting", (options) =>
+        voiceOver.stopInteracting(options),
+      ),
     perform: (command) =>
       action(
         "voiceover.perform",
-        () => voiceOver.perform(voiceOver.commanderCommands[command]),
+        (options) => {
+          const keyboardCommand = voiceOver.keyboardCommands[command];
+          const commanderCommand = voiceOver.commanderCommands[command];
+
+          if (keyboardCommand) {
+            return voiceOver.perform(keyboardCommand, options);
+          }
+          if (commanderCommand) {
+            return voiceOver.perform(commanderCommand, options);
+          }
+          throw new Error(`Unsupported VoiceOver command: ${command}`);
+        },
         command,
       ),
     escape: () =>
-      action("voiceover.escape", () =>
-        voiceOver.perform(voiceOver.commanderCommands.ESCAPE),
+      action("voiceover.escape", (options) =>
+        voiceOver.perform(voiceOver.commanderCommands.ESCAPE, options),
       ),
-    type: (text) => action("voiceover.type", () => type(text), text),
+    type: (text) =>
+      action("voiceover.type", (options) => type(text, options), text),
   };
 }

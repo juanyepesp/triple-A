@@ -6,6 +6,7 @@
 **/__pycache__
 .DS_Store
 */venv
+guidecore/scripts/venv
 */logs
 out.txt
 */vision_outputs/

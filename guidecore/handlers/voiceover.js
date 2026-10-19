@@ -7,8 +7,8 @@ export function createVoiceOverHandlers({ voiceOverService }) {
       };
     },
 
-    async "voiceover.start"() {
-      await voiceOverService.start();
+    async "voiceover.start"(params) {
+      await voiceOverService.start(params);
       return { ok: true };
     },
 

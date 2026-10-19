@@ -1,7 +1,7 @@
 import { createServer } from "node:net";
 import { existsSync, unlinkSync } from "node:fs";
 
-export function createRpcServer({ socketPath, handlers, logger }) {
+export function createRpcServer({ socketPath, handlers, logger, onAction }) {
   let requestQueue = Promise.resolve();
 
   function removeExistingSocket() {
@@ -51,6 +51,7 @@ export function createRpcServer({ socketPath, handlers, logger }) {
 
     try {
       const result = await handler(params);
+      onAction?.({ method, params, result });
 
       if (id !== undefined && id !== null) {
         writeMessage(socket, { jsonrpc: "2.0", id, result });

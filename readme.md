@@ -36,6 +36,9 @@ npm ci
 npx playwright install chromium
 npx @guidepup/setup setup
 npx @guidepup/setup install
+
+# In another terminal, install the optional human interaction recorder
+python -m pip install -r scripts/requirements.txt
 ```
 
 Install the Guidecore dependencies on the machine where the daemon will run.
@@ -53,6 +56,60 @@ npm start
 ```
 
 This starts the RPC server at `/tmp/guidecore.sock`.
+
+### Control VoiceOver remotely
+
+When using a VM or SSH, the keyboard helper can translate ordinary keyboard
+input into GuideCore VoiceOver commands. It does not require pressing the
+VoiceOver `Control+Option` modifier:
+
+```zsh
+cd guidecore
+python scripts/keystrokes.py \
+  --url "https://example.com" \
+  --impairment low_vision
+```
+
+The helper starts the GuideCore browser and VoiceOver instances, then maps:
+
+- `Right Arrow` to `voiceover.next`
+- `Left Arrow` to `voiceover.previous`
+- `Shift+Down Arrow` to `voiceover.startInteracting`
+- `Shift+Up Arrow` to `voiceover.stopInteracting`
+- `Space` to the focused item's default action
+- `h` / `H` to next/previous heading
+- `m` / `M` to next/previous landmark
+- `l` / `L` to next/previous link
+- `w` to return to web content
+- `e` or `Escape` to escape the current VoiceOver context
+- `t` to enter text for `voiceover.type`
+
+Commands are sent through the existing GuideCore Unix socket, so Guidepup
+executes them in the VM. Use `--debug-keys` to inspect the keys received by
+the VM. Navigation commands use a low-latency path without waiting for speech
+capture or a screenshot refresh, and repeated pending arrow commands are
+coalesced so stale navigation does not build up. Press `Ctrl+C` to stop
+VoiceOver and the browser.
+
+If an interaction recording is also desired, start it separately through the
+recording RPC API before using this controller. The resulting VoiceOver RPC
+actions are recorded as agent actions; the controller does not persist raw
+keyboard events.
+
+The controller reads the SSH terminal's stdin rather than using a global
+keyboard listener, so it does not depend on macOS Input Monitoring or
+VoiceOver exposing its `Control+Option` events. Run it from an interactive SSH
+terminal. Use debug mode to inspect the terminal escape sequences:
+
+```zsh
+python scripts/keystrokes.py \
+  --url "https://example.com" \
+  --impairment low_vision \
+  --debug-keys
+```
+
+If an arrow combination does not execute, inspect the sequence printed by
+`--debug-keys`; terminal emulators can use different Shift+arrow sequences.
 
 **Terminal 2: start the Python agent**
 
