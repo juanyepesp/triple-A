@@ -171,6 +171,7 @@ export function createVoiceOverService({
   commit,
   getPage,
   collectAccessibilityState,
+  captureScreenshot,
 }) {
   async function getCursorBounds() {
     const script = `
@@ -201,7 +202,7 @@ end tell
     const accessibilityState = await collectAccessibilityState();
     const voiceoverBounds = await getCursorBounds().catch(() => null);
     const pageScreenshotPath = `.././screenshots/${randomUUID()}.jpeg`;
-    await page.screenshot({ path: pageScreenshotPath });
+    await captureScreenshot(pageScreenshotPath);
     const nextRunningState =
       fromAction === "voiceover.start"
         ? true

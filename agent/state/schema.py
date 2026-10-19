@@ -29,6 +29,7 @@ class Vision(TypedDict):
     description: str
     path: str
     screenshot_hash: str
+    report_path: NotRequired[str]
 
 class Perception(BaseModel):
     """

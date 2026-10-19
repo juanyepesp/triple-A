@@ -1,8 +1,9 @@
-# Triple-A Accessibility Agent
+# Triple-A: Adaptive Accessibility Assessments
 
-A multimodal accessibility agent that uses a screen reader to navigate a website.
+<!-- A multimodal accessibility agent that uses a screen reader to navigate a website. -->
 
 <!-- TODO maybe add a logo or more branding -->
+<!-- TODO explicar que hace cada cosa, que guidecore es el sistema principal -->
 
 ## Prerequisites
 
@@ -15,6 +16,9 @@ A multimodal accessibility agent that uses a screen reader to navigate a website
 
 > [!NOTE]
 > **Guidecore** is a node project that is implemented also as a part of this project. Right now, it lives inside the repository, but it may be de-coupled in the future, and extended to a screen-reader testing suite. It controls VoiceOver using a library named Guidepup, while orchestrating the runtime using Playwright.
+>
+>
+> Guidecore's browser service applies the configured vision impairment directly to the live page rendering. The person operating VoiceOver sees the same simulation that is captured for the Python agent, while interaction and replay continue to target the unmodified page DOM.
 
 
 ## Installation
@@ -62,6 +66,12 @@ When the test Chrome window opens, pause the agent and configure the VoiceOver h
 
 1. Use VoiceOver to move to the web content until it announces “web content”.
 2. Set that location as hotspot 1 with `VO + Shift + 1`.
+
+Vision inspection reports are written as self-contained HTML files under
+`agent/vision_outputs/`. Each report contains the exact rendered screenshot
+sent to the model, the selected impairment, the screenshot hash, and the
+model's description. The latest report path is also stored in the agent's
+`vision` state as `report_path`.
 
 ## Review tasks side by side
 

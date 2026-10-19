@@ -2,7 +2,14 @@ from state.schema import AgentState, Perception, Evaluation, ActionRecord, Trans
 from prompts.load import load_prompt
 from tools import actions as guidecore
 from tools.voiceover import voiceover_tools
-from tools.image_processing import (apply_impairment, encode_jpeg, image_changed, image_hash, load_screenshot, save_vision_report)
+from tools.image_processing import (
+    VISION_REPORTS_DIR,
+    encode_jpeg,
+    image_changed,
+    image_hash,
+    load_screenshot,
+    save_vision_report,
+)
 from state.parsers import parse_daemon_snapshot
 
 from langchain_openai import ChatOpenAI
@@ -40,7 +47,8 @@ def bootstrap(state: AgentState)-> AgentState:
 
     try:
         guidecore.browser_start(
-            url=state['initial_URL']
+            url=state['initial_URL'],
+            impairment=state.get("impairment", "none"),
         )
         guidecore.voiceover_start()
         guidecore.voiceover_go_to_web_content()
@@ -111,8 +119,7 @@ def build_transition(
 
 def vision(state: AgentState)-> AgentState:
     '''
-    This node takes in the screenshot, applies the visual filter, and
-    sends the picture to an LLM for description.
+    This node sends the Guidecore-provided screenshot to an LLM for description.
     '''
     screenshot_path, image = load_screenshot(
         state["snapshot"]["context"]["page"]["screenshotPath"],
@@ -125,7 +132,6 @@ def vision(state: AgentState)-> AgentState:
     if not image_changed(image, previous_hash):
         return state
 
-    transformed_image = apply_impairment(image, impairment)
     system_prompt = load_prompt("vision.md")
     response = model.invoke([
         {
@@ -145,7 +151,7 @@ def vision(state: AgentState)-> AgentState:
                 {
                     "type": "image_url",
                     "image_url": {
-                        "url": encode_jpeg(transformed_image),
+                        "url": encode_jpeg(image),
                         "detail": "low"},
                 },
             ],
@@ -160,14 +166,15 @@ def vision(state: AgentState)-> AgentState:
         "description": description,
     }
     
-    save_vision_report(
-        transformed_image,
+    report_path = save_vision_report(
+        image,
         description,
-        "vision_outputs",
+        VISION_REPORTS_DIR,
         screenshot_path,
         impairment,
         current_hash,
     )
+    state["vision"]["report_path"] = str(report_path)
     
     return state
 

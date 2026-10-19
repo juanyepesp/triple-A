@@ -106,7 +106,8 @@ client.ping()
 client.call(
     "browser.start",
     {
-        'url': 'https://playwright.dev/docs/api/class-elementhandle'
+        'url': 'https://playwright.dev/docs/api/class-elementhandle',
+        'impairment': 'low vision'
     }
 )
 

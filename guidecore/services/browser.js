@@ -1,5 +1,92 @@
 import { chromium } from "playwright";
 
+const IMPAIRMENT_NAMES = new Set([
+  "none",
+  "original",
+  "blur",
+  "low_vision",
+  "protanopia",
+  "deuteranopia",
+  "tritanopia",
+  "tunnel_vision",
+]);
+
+const COLOR_VISION_MATRICES = {
+  protanopia: [
+    [0.567, 0.433, 0],
+    [0.558, 0.442, 0],
+    [0, 0.242, 0.758],
+  ],
+  deuteranopia: [
+    [0.625, 0.375, 0],
+    [0.7, 0.3, 0],
+    [0, 0.3, 0.7],
+  ],
+  tritanopia: [
+    [0.95, 0.05, 0],
+    [0, 0.433, 0.567],
+    [0, 0.475, 0.525],
+  ],
+};
+
+function normalizeImpairment(impairment) {
+  return String(impairment ?? "none")
+    .toLowerCase()
+    .replaceAll("-", "_")
+    .replaceAll(" ", "_");
+}
+
+function validateImpairment(impairment) {
+  const normalized = normalizeImpairment(impairment);
+  if (!IMPAIRMENT_NAMES.has(normalized)) {
+    throw new Error(
+      `Unsupported impairment ${impairment}. Use none, blur, low_vision, protanopia, deuteranopia, tritanopia, or tunnel_vision.`,
+    );
+  }
+  return normalized;
+}
+
+function colorMatrixValues(matrix) {
+  return [
+    ...matrix.flatMap((row) => [...row, 0, 0]),
+    0,
+    0,
+    0,
+    1,
+    0,
+  ].join(" ");
+}
+
+function visionFilterStyles(impairment) {
+  const colorMatrix = COLOR_VISION_MATRICES[impairment];
+  const pageFilter = colorMatrix
+    ? "filter: url(#guidecore-vision-color-filter) !important;"
+    : impairment === "blur" || impairment === "low_vision"
+      ? "filter: blur(5px) !important;"
+      : "";
+  const tunnelOverlay =
+    impairment === "tunnel_vision"
+      ? `
+#guidecore-vision-tunnel {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483647 !important;
+  pointer-events: none !important;
+  background: radial-gradient(
+    ellipse 33.333% 33.333% at center,
+    transparent 0 99%,
+    black 100%
+  ) !important;
+}`
+      : "";
+
+  return `
+html { ${pageFilter} }
+#guidecore-vision-tunnel { display: none; }
+${tunnelOverlay}
+`;
+}
+
 const LANDMARK_ROLES = new Set([
   "banner",
   "complementary",
@@ -151,6 +238,58 @@ function findActivePath(tree) {
 export function createBrowserService({ daemonState, commit, logger }) {
   let pageEventQueue = Promise.resolve();
   let a11yStructure = null;
+  let visionImpairment = "none";
+
+  async function applyVisionFilter() {
+    const page = daemonState.page;
+    if (!page) {
+      throw new Error("Cannot apply vision filter because no browser page is active");
+    }
+
+    const impairment = visionImpairment;
+    const matrix = COLOR_VISION_MATRICES[impairment];
+    await page.evaluate(
+      ({ impairment, matrix, styles }) => {
+        document
+          .getElementById("guidecore-vision-filter")
+          ?.remove();
+        document
+          .getElementById("guidecore-vision-filter-defs")
+          ?.remove();
+        document
+          .getElementById("guidecore-vision-tunnel")
+          ?.remove();
+
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.id = "guidecore-vision-filter-defs";
+        svg.setAttribute("aria-hidden", "true");
+        svg.style.position = "fixed";
+        svg.style.width = "0";
+        svg.style.height = "0";
+        svg.innerHTML = matrix
+          ? `<filter id="guidecore-vision-color-filter"><feColorMatrix type="matrix" values="${matrix}" /></filter>`
+          : "";
+        document.documentElement.appendChild(svg);
+
+        const style = document.createElement("style");
+        style.id = "guidecore-vision-filter";
+        style.textContent = styles;
+        document.head.appendChild(style);
+
+        if (impairment === "tunnel_vision") {
+          const overlay = document.createElement("div");
+          overlay.id = "guidecore-vision-tunnel";
+          overlay.setAttribute("aria-hidden", "true");
+          document.body.appendChild(overlay);
+        }
+      },
+      {
+        impairment,
+        matrix: matrix ? colorMatrixValues(matrix) : null,
+        styles: visionFilterStyles(impairment),
+      },
+    );
+  }
   let cachedA11yElements = {
     landmarks: [],
     headings: [],
@@ -206,6 +345,7 @@ export function createBrowserService({ daemonState, commit, logger }) {
 
     page.on("load", async () => {
       enqueuePageEvent(async () => {
+        await applyVisionFilter();
         const accessibilityState = await collectNodesFromA11yTree();
 
         commit(
@@ -282,10 +422,13 @@ export function createBrowserService({ daemonState, commit, logger }) {
     bindPageEvents(daemonState.page);
   }
 
-  async function start(url) {
+  async function start(url, impairment = "none") {
+    const normalizedImpairment = validateImpairment(impairment);
     await ensureBrowser();
+    visionImpairment = normalizedImpairment;
     resetA11yStructure();
     await daemonState.page.goto(url, { waitUntil: "load" });
+    await applyVisionFilter();
 
     await pageEventQueue;
     const accessibilityState = await collectNodesFromA11yTree();
@@ -361,6 +504,10 @@ export function createBrowserService({ daemonState, commit, logger }) {
     }));
   }
 
+  async function captureScreenshot(outputPath) {
+    await daemonState.page.screenshot({ path: outputPath });
+  }
+
   async function ariaSnapshot() {
     return daemonState.page.ariaSnapshotJSON({
       mode: "ai",
@@ -432,6 +579,7 @@ export function createBrowserService({ daemonState, commit, logger }) {
     start,
     stop,
     viewportLocation,
+    captureScreenshot,
     ariaSnapshot,
     collectNodesFromA11yTree,
     activeNodes,

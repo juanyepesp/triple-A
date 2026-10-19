@@ -54,6 +54,7 @@ const voiceOverService = createVoiceOverService({
   commit: state.commit,
   getPage: browserService.getPage,
   collectAccessibilityState: browserService.collectNodesFromA11yTree,
+  captureScreenshot: browserService.captureScreenshot,
 });
 
 // -----------------------------------------------------------

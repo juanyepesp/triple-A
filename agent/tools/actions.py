@@ -8,8 +8,8 @@ client = GuidecoreClient()
 def snapshot() -> dict[str, Any]:
     return client.call("daemonstate.snapshot")
 
-def browser_start(url: str) -> Any:
-    return client.call("browser.start", {"url": url})
+def browser_start(url: str, impairment: str = "none") -> Any:
+    return client.call("browser.start", {"url": url, "impairment": impairment})
 
 def browser_stop() -> Any:
     return client.call("browser.stop")
