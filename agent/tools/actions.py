@@ -14,6 +14,18 @@ def browser_start(url: str, impairment: str = "none") -> Any:
 def browser_stop() -> Any:
     return client.call("browser.stop")
 
+def recording_status() -> Any:
+    return client.call("recording.status")
+
+def recording_start(url: str, impairment: str) -> Any:
+    return client.call(
+        "recording.start",
+        {"url": url, "impairment": impairment},
+    )
+
+def recording_stop() -> Any:
+    return client.call("recording.stop")
+
 def voiceover_start() -> Any:
     return client.call("voiceover.start")
 

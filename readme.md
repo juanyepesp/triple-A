@@ -59,9 +59,7 @@ This starts the RPC server at `/tmp/guidecore.sock`.
 
 ### Control VoiceOver remotely
 
-When using a VM or SSH, the keyboard helper can translate ordinary keyboard
-input into GuideCore VoiceOver commands. It does not require pressing the
-VoiceOver `Control+Option` modifier:
+When using a VM or SSH, the keyboard helper can translate ordinary keyboard input into GuideCore VoiceOver commands. It does not require pressing the VoiceOver `Control+Option` modifier:
 
 ```zsh
 cd guidecore
@@ -84,17 +82,31 @@ The helper starts the GuideCore browser and VoiceOver instances, then maps:
 - `e` or `Escape` to escape the current VoiceOver context
 - `t` to enter text for `voiceover.type`
 
-Commands are sent through the existing GuideCore Unix socket, so Guidepup
-executes them in the VM. Use `--debug-keys` to inspect the keys received by
-the VM. Navigation commands use a low-latency path without waiting for speech
+Commands are sent through the existing GuideCore Unix socket, so Guidepup executes them in the VM. Use `--debug-keys` to inspect the keys received by the VM. Navigation commands use a low-latency path without waiting for speech
 capture or a screenshot refresh, and repeated pending arrow commands are
 coalesced so stale navigation does not build up. Press `Ctrl+C` to stop
 VoiceOver and the browser.
 
 The controller automatically starts an interaction recording with the supplied
 URL and impairment. Every resulting VoiceOver RPC action is recorded in the
-JSONL file as an agent-originated action; raw terminal input is not persisted.
+JSONL file with `source: "human"` for controller commands or
+`source: "agent"` for Python-agent commands; raw terminal input is not
+persisted. Agent and human actions can therefore appear in the same recording.
 The output path is printed when recording starts and when it is finalized.
+
+LangGraph nodes use a bounded retry policy: a failed node is retried up to
+three total attempts with exponential backoff (capped at four seconds),
+including the VoiceOver tool node. Existing model-output retries remain in
+place.
+
+The Python agent also owns its recording when it starts a run without an
+existing recording. It finalizes the VoiceOver/browser session and writes the
+`recording.stopped` entry on normal completion, `Ctrl+C`, `SIGTERM`, and
+uncaught Python errors. If a human controller already owns the recording, the
+agent adds its actions to that recording but does not stop it. Each JSONL entry
+is flushed to disk immediately, so completed interactions remain available even
+if the agent process is terminated before cleanup can run, such as with
+`SIGKILL`.
 
 The controller reads the SSH terminal's stdin rather than using a global
 keyboard listener, so it does not depend on macOS Input Monitoring or

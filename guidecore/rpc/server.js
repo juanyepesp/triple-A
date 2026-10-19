@@ -29,6 +29,7 @@ export function createRpcServer({ socketPath, handlers, logger, onAction }) {
     }
 
     const { id, method, params = {} } = request;
+    const { _source: source = "agent", ...handlerParams } = params;
 
     if (!method) {
       writeMessage(socket, {
@@ -50,14 +51,14 @@ export function createRpcServer({ socketPath, handlers, logger, onAction }) {
     }
 
     try {
-      const result = await handler(params);
-      onAction?.({ method, params, result });
+      const result = await handler(handlerParams);
+      onAction?.({ method, params: handlerParams, result, source });
 
       if (id !== undefined && id !== null) {
         writeMessage(socket, { jsonrpc: "2.0", id, result });
       }
     } catch (err) {
-      logger.error({ err, id, method, params }, "RPC handler failed");
+      logger.error({ err, id, method, params: handlerParams }, "RPC handler failed");
       writeMessage(socket, {
         jsonrpc: "2.0",
         id: id ?? null,

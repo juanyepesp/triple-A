@@ -16,8 +16,13 @@ class ClientError(Exception):
 
 
 class GuidecoreClient:
-    def __init__(self, path: str = "/tmp/guidecore.sock") -> None:
+    def __init__(
+        self,
+        path: str = "/tmp/guidecore.sock",
+        source: str = "agent",
+    ) -> None:
         self.path = path
+        self.source = source
         self.sock: Optional[socket.socket] = None
         self.lock = threading.Lock()
         self.next_id = 1
@@ -48,7 +53,7 @@ class GuidecoreClient:
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "method": method,
-                "params": params or {},
+                "params": {**(params or {}), "_source": self.source},
             }
             self.sock.sendall((json.dumps(payload) + "\n").encode("utf-8"))
 

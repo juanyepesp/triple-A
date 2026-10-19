@@ -1,4 +1,5 @@
 from langgraph.graph import StateGraph, START, END
+from langgraph.types import RetryPolicy
 
 from state.schema import AgentState
 
@@ -22,22 +23,33 @@ from graph.edges import (
 
 def build_graph():
     graph = StateGraph(AgentState)
+    retry_policy = RetryPolicy(
+        initial_interval=0.5,
+        backoff_factor=2.0,
+        max_interval=4.0,
+        max_attempts=3,
+        retry_on=Exception,
+    )
 
     # ---------------------------
     # Nodes
     # ---------------------------
 
-    graph.add_node("bootstrap", bootstrap)
-    graph.add_node("snapshot", snapshot)
-    graph.add_node("vision", vision)
-    graph.add_node("perception", perception)
-    graph.add_node("evaluation", evaluation)
-    graph.add_node("decision", decision)
+    graph.add_node("bootstrap", bootstrap, retry_policy=retry_policy)
+    graph.add_node("snapshot", snapshot, retry_policy=retry_policy)
+    graph.add_node("vision", vision, retry_policy=retry_policy)
+    graph.add_node("perception", perception, retry_policy=retry_policy)
+    graph.add_node("evaluation", evaluation, retry_policy=retry_policy)
+    graph.add_node("decision", decision, retry_policy=retry_policy)
 
-    graph.add_node("voiceover_tools", voiceover_tool_node)
+    graph.add_node(
+        "voiceover_tools",
+        voiceover_tool_node,
+        retry_policy=retry_policy,
+    )
 
-    graph.add_node("report", report)
-    graph.add_node("stop", stop)
+    graph.add_node("report", report, retry_policy=retry_policy)
+    graph.add_node("stop", stop, retry_policy=retry_policy)
 
     # ---------------------------
     # Initial flow

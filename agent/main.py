@@ -1,7 +1,10 @@
 import argparse
+import atexit
+import signal
 from graph.build import build_graph
 from copy import deepcopy
 from pprint import pprint
+from tools import actions
 
 
 def render_active_node(active_node: str) -> None:
@@ -82,16 +85,66 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-app = build_graph()
-app.get_graph().draw_mermaid_png(output_file_path='graph.png')
-
 # TODO change and or standardize for multiple goals and tests
 # end_goal = "On this website, without using visual page search, find the percentage of respondents who said they primarily navigate lengthy web pages using headings. Report the percentage and the other navigation methods listed in that section."
 # url = "https://webaim.org/projects/screenreadersurvey10/#finding"
 
 end_goal = "Starting from the TSA homepage, inside the What Can I Bring? section, find the elements a user can bring into a plane inside the carry-on and the checked luggage, reviewing the applicable restrictions for each item, including prohibited items, size and quantity limits."
 url = "https://www.tsa.gov/"
+impairment = "low_vision"
 
+recording_owned = False
+cleaned_up = False
+
+
+def cleanup() -> None:
+    global cleaned_up
+    if cleaned_up:
+        return
+    cleaned_up = True
+
+    if recording_owned:
+        for action in (actions.voiceover_stop, actions.browser_stop):
+            try:
+                action()
+            except Exception as error:
+                print(f"Cleanup warning: {error}", flush=True)
+        try:
+            result = actions.recording_stop()
+            print(
+                f"Recording saved to {result['recording']['path']}",
+                flush=True,
+            )
+        except Exception as error:
+            print(f"Cleanup warning: {error}", flush=True)
+
+
+def handle_termination(signum, _frame) -> None:
+    signal_name = signal.Signals(signum).name
+    print(f"\nReceived {signal_name}; finalizing recording...", flush=True)
+    raise KeyboardInterrupt
+
+
+def start_recording() -> None:
+    global recording_owned
+    status = actions.recording_status()
+    if status.get("recording", {}).get("active"):
+        print(
+            "Using the existing interaction recording; the agent will not stop it.",
+            flush=True,
+        )
+        return
+    recording = actions.recording_start(url, impairment)
+    recording_owned = True
+    print(
+        f"Recording agent interactions to {recording['recording']['path']}",
+        flush=True,
+    )
+
+
+signal.signal(signal.SIGINT, handle_termination)
+signal.signal(signal.SIGTERM, handle_termination)
+atexit.register(cleanup)
 
 initial_state = {
     "messages": [],
@@ -105,13 +158,22 @@ initial_state = {
     "iteration": 0,
     "goal_reached": False,
     "final_summary": "",
-    "impairment": "low_vision",
+    "impairment": impairment,
 }
 
 previous_state = {}
 
-for event in app.stream(initial_state, stream_mode="updates"):
-    for node_name, output in event.items():
-        changed = print_node_event(node_name, output, previous_state)
-        if args.step and changed:
-            input("\nPress Enter to continue to the next node... ")
+try:
+    start_recording()
+    app = build_graph()
+    app.get_graph().draw_mermaid_png(output_file_path="graph.png")
+
+    for event in app.stream(initial_state, stream_mode="updates"):
+        for node_name, output in event.items():
+            changed = print_node_event(node_name, output, previous_state)
+            if args.step and changed:
+                input("\nPress Enter to continue to the next node... ")
+except KeyboardInterrupt:
+    print("Agent stopped.", flush=True)
+finally:
+    cleanup()

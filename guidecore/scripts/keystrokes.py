@@ -46,7 +46,7 @@ class GuidecoreClient:
                 "jsonrpc": "2.0",
                 "id": self.next_id,
                 "method": method,
-                "params": params or {},
+                "params": {**(params or {}), "_source": "human"},
             }
             self.next_id += 1
             self.sock.sendall((json.dumps(request) + "\n").encode("utf-8"))

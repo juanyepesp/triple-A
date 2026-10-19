@@ -1,4 +1,10 @@
-import { appendFileSync, closeSync, mkdirSync, openSync } from "node:fs";
+import {
+  appendFileSync,
+  closeSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+} from "node:fs";
 import { join } from "node:path";
 
 function normalizeMetadata({ url, impairment }) {
@@ -19,6 +25,7 @@ export function createRecorder({ recordingsDirectory, logger }) {
       return false;
     }
     appendFileSync(session.fd, `${JSON.stringify(entry)}\n`, "utf8");
+    fsyncSync(session.fd);
     return true;
   }
 
@@ -74,15 +81,16 @@ export function createRecorder({ recordingsDirectory, logger }) {
     return true;
   }
 
-  function recordAgentAction({ method, params }) {
+  function recordAgentAction({ method, params, source = "agent" }) {
+    const parameters = params ?? {};
     if (method === "browser.start") {
-      updateMetadata(params);
+      updateMetadata(parameters);
     }
     if (method.startsWith("browser.") || method.startsWith("voiceover.")) {
       record({
-        source: "agent",
+        source,
         method,
-        parameters: params,
+        parameters,
       });
     }
   }
