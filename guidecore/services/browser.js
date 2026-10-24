@@ -9,6 +9,7 @@ const IMPAIRMENT_NAMES = new Set([
   "deuteranopia",
   "tritanopia",
   "tunnel_vision",
+  "diabetic_retinopathy",
 ]);
 
 const COLOR_VISION_MATRICES = {
@@ -40,7 +41,7 @@ function validateImpairment(impairment) {
   const normalized = normalizeImpairment(impairment);
   if (!IMPAIRMENT_NAMES.has(normalized)) {
     throw new Error(
-      `Unsupported impairment ${impairment}. Use none, blur, low_vision, protanopia, deuteranopia, tritanopia, or tunnel_vision.`,
+      `Unsupported impairment ${impairment}. Use none, blur, low_vision, protanopia, deuteranopia, tritanopia, tunnel_vision, or diabetic_retinopathy.`,
     );
   }
   return normalized;
@@ -63,7 +64,9 @@ function visionFilterStyles(impairment) {
     ? "filter: url(#guidecore-vision-color-filter) !important;"
     : impairment === "blur" || impairment === "low_vision"
       ? "filter: blur(5px) !important;"
-      : "";
+      : impairment === "diabetic_retinopathy"
+        ? "filter: blur(1.5px) contrast(0.85) saturate(0.8) !important;"
+        : "";
   const tunnelOverlay =
     impairment === "tunnel_vision"
       ? `
@@ -78,7 +81,22 @@ function visionFilterStyles(impairment) {
     black 100%
   ) !important;
 }`
-      : "";
+      : impairment === "diabetic_retinopathy"
+        ? `
+#guidecore-vision-tunnel {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483647 !important;
+  pointer-events: none !important;
+  background:
+    radial-gradient(circle 70px at 22% 30%, rgba(0,0,0,0.92) 0 55%, transparent 100%),
+    radial-gradient(circle 110px at 61% 48%, rgba(0,0,0,0.9) 0 55%, transparent 100%),
+    radial-gradient(circle 55px at 80% 22%, rgba(0,0,0,0.92) 0 55%, transparent 100%),
+    radial-gradient(circle 90px at 38% 74%, rgba(0,0,0,0.9) 0 55%, transparent 100%),
+    radial-gradient(circle 45px at 87% 70%, rgba(0,0,0,0.92) 0 55%, transparent 100%),
+    radial-gradient(circle 35px at 10% 82%, rgba(0,0,0,0.9) 0 55%, transparent 100%) !important;
+}`
+        : "";
 
   return `
 html { ${pageFilter} }
@@ -148,7 +166,7 @@ function compactNode(node) {
     name: node.name ?? null,
     text: node.text ?? null,
     ref: node.ref ?? null,
-    bounds: node.box ?? null, // TODO
+    bounds: node.box ?? null,
     active: node.active === true,
   };
 }
@@ -276,7 +294,7 @@ export function createBrowserService({ daemonState, commit, logger }) {
         style.textContent = styles;
         document.head.appendChild(style);
 
-        if (impairment === "tunnel_vision") {
+        if (impairment === "tunnel_vision" || impairment === "diabetic_retinopathy") {
           const overlay = document.createElement("div");
           overlay.id = "guidecore-vision-tunnel";
           overlay.setAttribute("aria-hidden", "true");

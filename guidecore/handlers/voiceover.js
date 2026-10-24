@@ -42,6 +42,11 @@ export function createVoiceOverHandlers({ voiceOverService }) {
       return { ok: true };
     },
 
+    async "voiceover.act"() {
+      await voiceOverService.act();
+      return { ok: true };
+    },
+
     async "voiceover.perform"({ command }) {
       await voiceOverService.perform(command);
       return { ok: true };

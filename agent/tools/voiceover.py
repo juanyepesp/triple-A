@@ -1,6 +1,14 @@
 from langchain_core.tools import tool
 from tools import actions
 
+@tool
+def voiceover_act() -> str:
+    """
+    Perform the default action for the item in the VoiceOver cursor.
+    Keyboard equivalent: VO-Space bar
+    """
+    return actions.voiceover_act()
+
 
 @tool
 def voiceover_next() -> str:
@@ -91,6 +99,7 @@ def voiceover_previous_link() -> str:
 
 
 voiceover_tools = [
+    voiceover_act,
     voiceover_next,
     voiceover_previous,
     voiceover_next_heading,

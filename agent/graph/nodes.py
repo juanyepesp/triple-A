@@ -1,5 +1,5 @@
 from state.schema import AgentState, Perception, Evaluation, ActionRecord, TransitionSummary
-from prompts.load import load_prompt
+from prompts.load import load_component_prompt
 from tools import actions as guidecore
 from tools.voiceover import voiceover_tools
 from tools.image_processing import (
@@ -10,7 +10,14 @@ from tools.image_processing import (
     load_screenshot,
     save_vision_report,
 )
-from state.parsers import parse_daemon_snapshot
+from state.parsers import (
+    bullets,
+    format_action_history,
+    format_perception,
+    format_perception_evidence,
+    format_transition,
+    parse_daemon_snapshot,
+)
 
 from langchain_openai import ChatOpenAI
 from langchain_core.exceptions import OutputParserException
@@ -18,8 +25,10 @@ from langgraph.prebuilt import ToolNode
 from pydantic import ValidationError
 
 model = ChatOpenAI(
-    model="gpt-4.1-nano",
-    temperature=0,
+    model="gpt-6-luna",
+    reasoning_effort="none",
+    streaming=True,
+    stream_usage=True,
 )
 
 perception_model = model.with_structured_output(
@@ -132,7 +141,7 @@ def vision(state: AgentState)-> AgentState:
     if not image_changed(image, previous_hash):
         return state
 
-    system_prompt = load_prompt("vision.md")
+    system_prompt = load_component_prompt("vision")
     response = model.invoke([
         {
             "role": "system",
@@ -186,28 +195,9 @@ def perception(state: AgentState)-> AgentState:
     - What element seems to be focused?
     - What does the page look like?
     '''
-    # Input:
-    # raw AOM
-    # VoiceOver utterances
-    # screenshot metadata
-    # current goal
-
-    # Output:
-
-    # a human-like description of the current situation
-    # what is focused
-    # what interactive things exist
-    # what navigation paths seem available
-    # LLM calls to process image and sr output, to produce
-    # left side of brain
-
-    # state['snapshot']['site_description'] = 'We are currently in a website for []'
-    # state['snapshot']['focus_element'] = 'We are focused on a button that has these capabilities'
-    # state['snapshot']['possibilities'] = 'From here we can go to these headings:[] links:[] or move to these places[] '
-
-    system_prompt = load_prompt("perception.md")
+    system_prompt = load_component_prompt("perception")
     
-    user_input = format_evidence(state)
+    user_input = format_perception_evidence(state)
     
 
     result = perception_model.invoke([
@@ -228,62 +218,31 @@ def perception(state: AgentState)-> AgentState:
 
 def evaluation(state: AgentState)-> AgentState:
     '''
-    This node evaluates 
-    - Is the goal reached? 
-    - How many times have I tried to accomplish an action? 
-    - How frustrated am I?
+    This node evaluates
+    - Is the goal reached?
+    - Is the agent making progress, or looping?
     '''
-    # llm reads from snapshot and updates memory
-    # state['iteration'] += 1
-    # state['memory'] = 'We have been trying to achieve this (), and it seems we are in this phase (). '
-
-    # # llm decides if state is reached or not
-    # import secrets
-    # state['goal_reached'] = secrets.choice(['reached', 'not_reached', 'unreachable'])
-
-    # This is the “am I making progress?” call.
-
-    # Input:
-
-    # state["perception"]
-    # task goal
-    # prior memory / iterations
-
-    # Output:
-
-    # goal_reached: bool
-    # progress_status
-    # confidence
-    # why
-
-    # This node should not plan actions yet. It should only judge the current situation.
-
-    # LLM calls
-    # right brain
-
-    system_prompt = load_prompt("evaluation.md")
+    system_prompt = load_component_prompt("evaluation")
 
     user_input = f"""
-    Goal:
+# GOAL
+{state["goal"]}
 
-    {state["goal"]}
+# STEP
+Iteration {state["iteration"]}
 
-    Current perception:
+# WHAT JUST HAPPENED
+{format_transition(state.get("transition"))}
 
-    {state["perception"].model_dump_json(indent=2)}
+# RECENT ACTIONS
+{format_action_history(state.get("action_history", []))}
 
-    Last action:
+# PERCEPTION (interpretation of the current snapshot)
+{format_perception(state["perception"])}
 
-    {state.get("last_action")}
-
-    Transition since the previous snapshot:
-
-    {state.get("transition")}
-
-    Iteration:
-
-    {state["iteration"]}
-    """
+# CURRENT EVIDENCE (raw, authoritative)
+{format_perception_evidence(state)}
+""".strip()
 
     result = evaluation_model.invoke([
         {
@@ -297,7 +256,7 @@ def evaluation(state: AgentState)-> AgentState:
     ])
 
     state['goal_reached'] = result.goal_reached
-    
+
     state["evaluation"] = result
 
     state["iteration"] += 1
@@ -305,7 +264,31 @@ def evaluation(state: AgentState)-> AgentState:
     return state
 
 def decision(state: AgentState) -> AgentState:
-    system_prompt = load_prompt("decision.md")
+    system_prompt = load_component_prompt("decision")
+
+    evaluation_result = state["evaluation"]
+    user_input = f"""
+# GOAL
+{state["goal"]}
+
+# WHAT JUST HAPPENED
+{format_transition(state.get("transition"))}
+
+# RECENT ACTIONS
+{format_action_history(state.get("action_history", []))}
+
+# EVALUATION (progress so far)
+Progress: {evaluation_result.progress_status} (confidence: {evaluation_result.confidence})
+Blocked: {evaluation_result.blocked}
+Evidence:
+{bullets(evaluation_result.evidence)}
+
+# PERCEPTION (interpretation of the current snapshot)
+{format_perception(state["perception"])}
+
+# CURRENT EVIDENCE (raw, authoritative)
+{format_perception_evidence(state)}
+""".strip()
 
     messages = [
         {
@@ -315,21 +298,7 @@ def decision(state: AgentState) -> AgentState:
         *state["messages"],
         {
             "role": "user",
-            "content": f"""
-    Goal:
-    {state["goal"]}
-
-    Current perception:
-    {state["perception"].model_dump_json(indent=2)}
-
-    Current evaluation:
-    {state["evaluation"].model_dump_json(indent=2)}
-
-    Current daemon evidence:
-
-    {format_evidence(state)}
-
-    """,
+            "content": user_input,
         },
     ]
 
@@ -367,24 +336,24 @@ def stop(state: AgentState) -> AgentState:
 def report(state: AgentState) -> AgentState:
     '''This node outputs the final reasoning'''
     # LLM call
-    system_prompt = load_prompt("report.md")
+    system_prompt = load_component_prompt("report")
 
     user_input = f"""
-    Goal:
+Goal:
 
-    {state["goal"]}
+{state["goal"]}
 
-    Final perception:
+Final perception:
 
-    {state["perception"]}
+{state["perception"]}
 
-    Evaluation:
+Evaluation:
 
-    {state["evaluation"].model_dump_json(indent=2)}
+{state["evaluation"].model_dump_json(indent=2)}
 
-    Actions taken:
+Actions taken:
 
-    {state.get("action_history", [])}
+{state.get("action_history", [])}
     """
 
     result = model.invoke([
@@ -401,46 +370,3 @@ def report(state: AgentState) -> AgentState:
     state["final_summary"] = result.content
 
     return state
-
-
-def format_evidence(state: AgentState) -> str:
-    """Render the compact, authoritative evidence packet for LLM nodes."""
-    context = state["snapshot"]["context"]
-    page = context["page"]
-    voiceover_focus = context["voiceoverFocus"]
-    relevant = context["relevantNodes"]
-    return f"""
-GOAL
-{state["goal"]}
-
-PAGE
-Title: {page.get("title")}
-URL: {page.get("url")}
-
-VOICEOVER
-Running: {context["voiceover"].get("running")}
-Last spoken phrase: {voiceover_focus.get("lastSpokenPhrase")}
-Item text log: {voiceover_focus.get("itemTextLog", [])}
-Outside web content: {voiceover_focus.get("isOutsideWebContent")}
-
-BROWSER FOCUS
-{context.get("browserFocus")}
-
-CURSOR PATH
-{context.get("cursorPath", [])}
-
-FOCUS COMPARISON
-{context.get("focusComparison")}
-
-RELEVANT NODES
-Active: {relevant.get("active", [])}
-Landmarks: {relevant.get("landmarks", [])}
-Headings: {relevant.get("headings", [])}
-Links: {relevant.get("links", [])}
-
-ACCESSIBILITY TREE
-{context.get("a11y", {}).get("tree")}
-
-VISUAL DESCRIPTION
-{state.get("vision", {}).get("description")}
-""".strip()

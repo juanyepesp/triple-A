@@ -370,6 +370,8 @@ end tell
       action("voiceover.stopInteracting", (options) =>
         voiceOver.stopInteracting(options),
       ),
+    act: () =>
+      action("voiceover.act", (options) => voiceOver.act(options)),
     perform: (command) =>
       action(
         "voiceover.perform",

@@ -36,7 +36,7 @@ function createDaemonState() {
         links: [],
       },
       a11y: {
-        tree: null, // TODO this needs to return only relevant nodes, not all of them because it will become a mess
+        tree: null,
       },
       voiceover: {
         running: false,

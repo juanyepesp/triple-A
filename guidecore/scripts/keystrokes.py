@@ -12,7 +12,7 @@ import tty
 
 
 TERMINAL_KEYS = {
-    " ": ("voiceover.perform", {"command": "performDefaultActionForItem"}),
+    " ": ("voiceover.act", {}),
     "\x1b": ("voiceover.escape", {}),
     "e": ("voiceover.escape", {}),
     "w": ("voiceover.goToWebContent", {}),

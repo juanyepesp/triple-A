@@ -14,6 +14,8 @@ sync_now() {
         --exclude='node_modules/' \
         --exclude='vision_outputs/' \
         --exclude='screenshots/' \
+        --exclude='runs/' \
+        --exclude='graph.png' \
         --exclude='.venv/' \
         --exclude='__pycache__/' \
         --exclude='.pytest_cache/' \

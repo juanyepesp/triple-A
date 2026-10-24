@@ -79,6 +79,7 @@ class Perception(BaseModel):
         )
     )
     
+    # TODO revisar si tiene sentido incluir este campo, porque a veces se inventa cosas
     element_interactions: list[str] = Field(
         description=(
             "A list of the available action from the element,"
@@ -93,12 +94,15 @@ class Perception(BaseModel):
             "List important observations that may influence future reasoning. "
         ),
     )
+    # TODO include a field like intuition. "I think if we approach this or that element..."
     current_element: Optional[dict[str, Any]] = None
     current_role: Optional[str] = None
     browser_focus: Optional[dict[str, Any]] = None
     is_outside_web_content: Optional[bool] = None
     confidence: Literal["high", "medium", "low"] = "low"
 
+
+# TODO maybe combine perception and evaluation
 
 class Evaluation(BaseModel):
     """

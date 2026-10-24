@@ -10,3 +10,5 @@ guidecore/scripts/venv
 */logs
 out.txt
 */vision_outputs/
+agent/runs/
+agent/graph.png

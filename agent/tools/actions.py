@@ -32,6 +32,9 @@ def voiceover_start() -> Any:
 def voiceover_go_to_web_content() -> Any:
     return client.call("voiceover.goToWebContent")
 
+def voiceover_act() -> Any:
+    return client.call("voiceover.act")
+
 def voiceover_stop() -> Any:
     return client.call("voiceover.stop")
 
