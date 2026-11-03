@@ -58,8 +58,8 @@ export function createVoiceOverHandlers({ voiceOverService }) {
     },
 
     async "voiceover.type"({ text }) {
-      await voiceOverService.type(text);
-      return { ok: true };
+      const field = await voiceOverService.type(text);
+      return { ok: true, typedInto: field };
     },
 
     async "voiceover.nextHeading"() {

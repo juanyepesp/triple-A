@@ -112,5 +112,5 @@ voiceover_tools = [
     voiceover_stop_interacting,
     voiceover_go_to_web_content,
     voiceover_escape,
-    voiceover_type,
+    # voiceover_type is intentionally not registered: no current task needs typing.
 ]

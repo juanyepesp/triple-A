@@ -301,6 +301,7 @@ class ActionRecord(TypedDict):
     name: str
     arguments: dict[str, Any]
     result: Optional[str]
+    decision: NotRequired[int]  # iteration of the decision that issued it; several actions can share one
 
 
 class TransitionSummary(TypedDict):

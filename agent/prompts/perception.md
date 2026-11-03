@@ -24,6 +24,7 @@ Report:
 - the current page and semantic navigation options
 - explicit interactions announced by VoiceOver
 - important observations and missing or contradictory evidence
+- the text found in `NEARBY CONTENT` (the focused element's full text and its neighbours), quoted exactly in `relevant_observations` when it relates to the goal; do not paraphrase numbers, dates or names
 
 Do not choose the next action. Do not treat an action name or goal as evidence
 that an action succeeded or that a target was found.
@@ -32,7 +33,7 @@ that an action succeeded or that a target was found.
 
 1. Explicit VoiceOver phrase and item text
 2. Active accessibility node and cursor path
-3. Relevant landmarks, headings, and links
+3. Relevant landmarks, headings, and links, and `NEARBY CONTENT`
 4. Browser focus and focus comparison
 5. Visual description
 6. Previous state

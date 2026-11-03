@@ -2,11 +2,19 @@
 
   python main.py                      interactive task picker (tasks.csv)
   python main.py run t001 t005 --step run tasks sequentially, pausing after every node
-  python main.py inspect [run_id]     browse a saved run step by step
+  python main.py replay [run_id|task_id|recording.jsonl] [--live]
+                                      step through a saved run: agent outputs, state and VoiceOver commands
+  python main.py batch [ids] [--impairment tunnel_vision] [--retry timeout error] [--from t011] [--limit N]
+                                      run many tasks unattended (same live output), logging each
+                                      run to results/runs_log.csv; resumable
+  python main.py summary              success rate / time / iterations per impairment
 """
 import argparse
 import atexit
+import re
 import signal
+import time
+import traceback
 
 from rich.console import Console
 from rich.panel import Panel
@@ -14,62 +22,48 @@ from rich.pretty import pprint
 from rich.table import Table
 from rich.text import Text
 
-from inspect_run import inspect
+from render import render_active_node, show_llm_calls, show_state
+from replay import replay
+import runlog
+from state.parsers import consecutive_repeats
 from runs import Run, latest_status, load_tasks, to_jsonable
 from tools import actions
 from tracing import LLMTrace
 
 console = Console()
 
-ROUTE = [
-    "bootstrap",
-    "snapshot",
-    "vision",
-    "perception",
-    "evaluation",
-    "decision",
-    "voiceover_tools",
-    "report",
-    "stop",
-]
-
-
-def render_active_node(active_node: str) -> None:
-    """Show the graph route with the node currently being inspected."""
-    labels = [f"[ {n} ]" if n == active_node else f"  {n}  " for n in ROUTE]
-    console.print("  -> ".join(labels), highlight=False, markup=False)
-
-
 class AgentAborted(Exception):
     pass
 
 
-PREVIEW_CHARS = 1200
+class RunTimeout(BaseException):
+    """BaseException so the graph's RetryPolicy (retry_on=Exception) cannot swallow it."""
 
 
-def show_llm_calls(calls: list[dict], full: bool = False) -> None:
-    """Print the messages the LLM saw and what it returned; long text is clipped unless full."""
-    for call in calls:
-        console.print(f"[bold cyan]LLM call[/bold cyan] node={call['node']} model={call['model']}")
-        for message in call["input"] + [call["output"]]:
-            text = message["content"]
-            if not full and len(text) > PREVIEW_CHARS:
-                text = text[:PREVIEW_CHARS] + f"\n... [{len(message['content']) - PREVIEW_CHARS} more chars, use i to see all]"
-            if message is call["output"]:
-                title, style = "OUTPUT", "green"
-            else:
-                title, style = f"INPUT ({message['role']})", "yellow"
-            if message.get("tool_calls"):
-                text += f"\ntool_calls: {message['tool_calls']}"
-            console.print(Panel(Text(text or "<empty>"), title=title, border_style=style, title_align="left"))
+class RunStopped(Exception):
+    def __init__(self, outcome: str, reason: str):
+        super().__init__(reason)
+        self.outcome, self.reason = outcome, reason
+
+
+DEFAULT_MAX_ITERATIONS = 50
+MAX_SAME_ACTION = 8  # same tool, same arguments, back to back
+DEFAULT_TIMEOUT_S = 1200
+# Each loop is snapshot, vision, perception, evaluation, decision and (usually) a tool node.
+STEPS_PER_ITERATION = 7
+SITE_ERROR = re.compile(
+    r"net::ERR_|ERR_NAME_NOT_RESOLVED|ERR_CONNECTION|ERR_CERT|ERR_TIMED_OUT|NS_ERROR|"
+    r"ERR_HTTP2|ERR_SSL|Timeout \d+ms exceeded",
+    re.I,
+)
 
 
 BRIEF_CHARS = 200
 
 
-def show_brief(step_no: int, node: str, output: dict | None, calls: list[dict]) -> None:
+def show_brief(step_no: int, node: str, output: dict | None, calls: list[dict], progress: str = "") -> None:
     """Compact non-step output: one line per node plus a short clip of each LLM response."""
-    console.print(f"[bold]step {step_no}[/bold] {node}")
+    console.print(f"[bold]step {step_no}[/bold] {node}" + (f"  [dim]{progress}[/dim]" if progress else ""))
     for call in calls:
         text = " ".join(call["output"]["content"].split())
         if text:
@@ -78,10 +72,6 @@ def show_brief(step_no: int, node: str, output: dict | None, calls: list[dict]) 
     summary = (output or {}).get("final_summary")
     if summary:
         console.print(Panel(Text(summary), title="Final summary", border_style="green", title_align="left"))
-
-
-def show_state(value) -> None:
-    pprint(value, expand_all=True, max_string=200, max_length=6, max_depth=4)
 
 
 def step_prompt(state: dict, calls: list[dict]) -> None:
@@ -100,9 +90,27 @@ def step_prompt(state: dict, calls: list[dict]) -> None:
             raise AgentAborted
 
 
-def run_task(task: dict, step: bool) -> str:
+def run_task(
+    task: dict,
+    step: bool,
+    queue_label: str = "",
+    max_iterations: int = DEFAULT_MAX_ITERATIONS,
+    timeout_s: int = DEFAULT_TIMEOUT_S,
+) -> dict:
+    """Run one task; returns its meta (status, outcome, duration_s, iterations, ...)."""
     run = Run(task)
-    console.rule(f"{run.run_id}")
+    run.meta.update(max_iterations=max_iterations, timeout_s=timeout_s)
+    started = time.monotonic()
+    iterations, blocked_evals, outcome, last_state = 0, 0, None, {}
+    trace = LLMTrace(console)
+    step_no = 0
+
+    def on_alarm(*_):
+        raise RunTimeout
+
+    previous_alarm = signal.signal(signal.SIGALRM, on_alarm)
+    signal.setitimer(signal.ITIMER_REAL, timeout_s)
+    console.rule(f"{queue_label}{run.run_id}")
     console.print(f"[bold]Goal:[/bold] {task['goal']}\n[bold]URL:[/bold] {task['url']}  [bold]Impairment:[/bold] {task['impairment']}")
 
     recording_owned = False
@@ -158,12 +166,11 @@ def run_task(task: dict, step: bool) -> str:
             "impairment": task["impairment"],
         }
 
-        step_no, pending, calls = 0, None, []
-        trace = LLMTrace(console)
+        pending, calls = None, []
         # "updates" gives per-node deltas, "values" the full state after each superstep.
         for mode, chunk in app.stream(
             initial_state,
-            config={"callbacks": [trace]},
+            config={"callbacks": [trace], "recursion_limit": max_iterations * STEPS_PER_ITERATION + 20},
             stream_mode=["updates", "values"],
         ):
             if mode == "updates":
@@ -174,8 +181,18 @@ def run_task(task: dict, step: bool) -> str:
                     run.log(step_no, "llm", call["node"], call)
                 for node, output in chunk.items():
                     run.log(step_no, "update", node, output)
+                    if node == "evaluation" and output["evaluation"].blocked:
+                        blocked_evals += 1
             else:
                 run.log(step_no, "state", None, chunk)
+                last_state = chunk
+                iterations = chunk.get("iteration", iterations)
+                repeats = consecutive_repeats(chunk.get("action_history") or [])
+                if not chunk.get("goal_reached") and repeats >= MAX_SAME_ACTION:
+                    name = chunk["action_history"][-1]["name"]
+                    raise RunStopped("stuck", f"'{name}' repeated {repeats} times in a row without reaching the goal")
+                if not chunk.get("goal_reached") and iterations >= max_iterations:
+                    raise RunStopped("max_iterations", f"reached {iterations} iterations without the goal")
                 if pending is None:
                     continue
                 for node, output in pending.items():
@@ -186,22 +203,69 @@ def run_task(task: dict, step: bool) -> str:
                         console.print("[bold magenta]State update (abridged)[/bold magenta]")
                         show_state(output)
                     else:
-                        show_brief(step_no, node, output, calls)
+                        if queue_label:
+                            render_active_node(node)
+                        elapsed = int(time.monotonic() - started)
+                        show_brief(
+                            step_no, node, output, calls,
+                            f"{queue_label}iter {iterations}/{max_iterations} · {elapsed}s/{timeout_s}s · blocked evals {blocked_evals}",
+                        )
                 pending = None
                 if step:
                     step_prompt(to_jsonable(chunk), calls)
+    except RunTimeout:
+        status, outcome = "failed", "timeout"
+        run.meta["error"] = f"exceeded {timeout_s}s"
+        print("Run timed out.", flush=True)
+    except RunStopped as stop:
+        status, outcome = "failed", stop.outcome
+        run.meta["error"] = stop.reason
+        print(f"Run stopped: {stop.reason}", flush=True)
     except (KeyboardInterrupt, AgentAborted):
-        status = "aborted"
+        status, outcome = "aborted", "aborted"
         print("Agent stopped.", flush=True)
     except Exception as error:
         status = "failed"
         console.print_exception()
-        run.meta["error"] = repr(error)
+        run.trace_error(traceback.format_exc())
+        text = repr(error) + repr(error.__cause__ or "")
+        if SITE_ERROR.search(text):
+            outcome = "site_error"
+        elif step_no <= 2:
+            outcome = "setup_error"  # failed in bootstrap/first snapshot: daemon/API/environment, not the agent
+        else:
+            outcome = "error"
+        run.meta["error"] = text[:500]
     finally:
+        # LLM calls are normally logged when their node finishes; keep the ones of a node that failed or timed out.
+        for call in trace.drain():
+            run.log(step_no + 1, "llm", call["node"], call)
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_alarm)
+        if outcome is None:
+            outcome = "success" if last_state.get("goal_reached") else "error"
+        evaluation = last_state.get("evaluation")
+        run.meta.update(
+            outcome=outcome,
+            success=outcome == "success",
+            duration_s=round(time.monotonic() - started, 1),
+            iterations=iterations,
+            actions=len(last_state.get("action_history", [])),
+            blocked_evaluations=blocked_evals,
+            last_progress_status=getattr(evaluation, "progress_status", None),
+            final_summary=(last_state.get("final_summary") or "")[:2000],
+        )
         run.set_status(status)
+        with open(run.dir / "transcript.md", "a", encoding="utf-8") as f:
+            f.write(
+                f"\n---\n## Result: {outcome} ({status}) · {run.meta['duration_s']}s · "
+                f"{iterations} iterations · {run.meta['actions']} actions\n"
+                + (f"\nError: {run.meta['error']}\n" if run.meta.get("error") else "")
+                + (f"\n{run.meta['final_summary']}\n" if run.meta.get("final_summary") else "")
+            )
         run.close()
         cleanup()
-    return status
+    return run.meta
 
 
 def select_tasks(tasks: list[dict]) -> list[dict]:
@@ -218,7 +282,7 @@ def select_tasks(tasks: list[dict]) -> list[dict]:
             str(i),
             t["task_id"],
             status.get((t["task_id"], t["impairment"]), "-"),
-            {"low_vision": "lv", "tunnel_vision": "tv", "diabetic_retinopathy": "dr"}.get(t["impairment"], t["impairment"]),
+            {"low_vision": "lv", "tunnel_vision": "tv"}.get(t["impairment"], t["impairment"]),
             t["site"],
             t["goal"],
         )
@@ -240,20 +304,100 @@ def select_tasks(tasks: list[dict]) -> list[dict]:
     return picked
 
 
+def batch(tasks: list[dict], args) -> None:
+    if args.ids:
+        tasks = [t for t in tasks if t["task_id"] in args.ids]
+
+    attempts: dict[tuple, int] = {}
+    last_outcome: dict[tuple, str] = {}
+    for r in runlog.read_log():
+        key = (r["task_id"], r["impairment"])
+        attempts[key] = attempts.get(key, 0) + 1
+        last_outcome[key] = r["outcome"]
+    retry = {"setup_error", *(args.retry or [])}
+    if args.start_from:
+        # Start over from this task: it and every later task run again, whatever the log says.
+        ids = [t["task_id"] for t in tasks]
+        if args.start_from not in ids:
+            console.print(f"[red]Unknown task id {args.start_from}[/red]")
+            return
+        queue = tasks[ids.index(args.start_from):]
+    else:
+        queue = [
+            t for t in tasks
+            if (t["task_id"], t["impairment"]) not in last_outcome
+            or last_outcome[(t["task_id"], t["impairment"])] in retry
+        ]
+    if args.limit:
+        queue = queue[: args.limit]
+    console.print(f"[bold]{len(queue)} runs queued[/bold] (log: {runlog.LOG})")
+    if queue:
+        try:
+            actions.recording_status()
+        except Exception as error:
+            console.print(f"[red]Cannot reach the guidecore daemon ({error!r}). Start it first; nothing was run or logged.[/red]")
+            return
+    setup_failures = 0
+
+    for n, task in enumerate(queue, 1):
+        key = (task["task_id"], task["impairment"])
+        meta = run_task(task, False, f"[{n}/{len(queue)}] ", args.max_iterations, args.timeout)
+        attempts[key] = attempts.get(key, 0) + 1
+        runlog.append_log({
+            "logged_at": meta.get("ended", ""),
+            "attempt": attempts[key],
+            "outcome": meta.get("outcome", "error"),
+            **{k: meta.get(k, "") for k in (
+                "run_id", "task_id", "impairment", "url", "goal", "success", "duration_s",
+                "iterations", "actions", "blocked_evaluations", "last_progress_status",
+                "error", "final_summary", "recording", "transcript",
+            )},
+        })
+        console.print(
+            f"[bold]{task['task_id']} {task['impairment']}: {meta.get('outcome')}[/bold] "
+            f"in {meta.get('duration_s')}s, {meta.get('iterations')} iterations"
+        )
+        setup_failures = setup_failures + 1 if meta.get("outcome") == "setup_error" else 0
+        if setup_failures >= 3:
+            console.print("[red]3 setup errors in a row; stopping the batch. Fix the environment (see the error column) and rerun; setup errors are retried automatically.[/red]")
+            break
+        if meta.get("outcome") == "aborted" and input("Run aborted. Continue with the batch? [y/N] ").strip().lower() != "y":
+            break
+    runlog.summary()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the accessibility agent.")
-    parser.add_argument("command", nargs="?", choices=["run", "inspect"], help="omit for the interactive menu")
-    parser.add_argument("ids", nargs="*", help="task ids for 'run' (or run id for 'inspect')")
+    parser.add_argument("command", nargs="?", choices=["run", "replay", "inspect", "batch", "summary"], help="omit for the interactive menu")
+    parser.add_argument("ids", nargs="*", help="task ids for 'run' (or a run id / recording path for 'replay')")
     parser.add_argument("--step", action="store_true", help="pause after each node")
+    parser.add_argument("--impairment", default="low_vision", help="only tasks with this impairment (default low_vision; 'all' for every row)")
+    parser.add_argument("--retry", nargs="*", metavar="OUTCOME", help="batch: re-run logged runs with these outcomes")
+    parser.add_argument("--from", dest="start_from", metavar="TASK_ID", help="batch: re-run this task and all later ones, ignoring the log")
+    parser.add_argument("--live", action="store_true", help="replay: also send the recorded commands to the running daemon")
+    parser.add_argument("--limit", type=int, help="batch: run at most N runs")
+    parser.add_argument("--max-iterations", type=int, default=DEFAULT_MAX_ITERATIONS)
+    parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_S, help="seconds per run")
     args = parser.parse_args()
 
-    if args.command == "inspect":
-        inspect(args.ids[0] if args.ids else None)
+    if args.command == "summary":
+        runlog.summary()
+        return
+
+    if args.command in ("replay", "inspect"):
+        replay(args.ids[0] if args.ids else None, live=args.live)
         return
 
     tasks = load_tasks()
+    if args.impairment != "all":
+        tasks = [t for t in tasks if t["impairment"] == args.impairment]
+    if args.command == "batch":
+        batch(tasks, args)
+        return
     if args.command == "run":
-        selected = [t for t in tasks if t["task_id"] in args.ids]
+        selected = [
+            t for t in tasks if t["task_id"] in args.ids
+        ]
         step = args.step
     else:
         selected = select_tasks(tasks)
@@ -265,7 +409,7 @@ def main() -> None:
 
     # One VoiceOver + browser daemon exists, so tasks must run one at a time.
     for task in selected:
-        result = run_task(task, step)
+        result = run_task(task, step, "", args.max_iterations, args.timeout)["status"]
         if result == "aborted" and input("Run aborted. Continue with remaining tasks? [y/N] ").strip().lower() != "y":
             break
 

@@ -172,6 +172,7 @@ export function createVoiceOverService({
   getPage,
   collectAccessibilityState,
   captureScreenshot,
+  setGaze,
 }) {
   let sessionOptions = { capture: true, refresh: true };
 
@@ -203,8 +204,9 @@ end tell
     const itemTextLog = (await voiceOver.itemTextLog().catch(() => [])).slice(-5);
     const accessibilityState = await collectAccessibilityState();
     const voiceoverBounds = await getCursorBounds().catch(() => null);
+    await setGaze?.(voiceoverBounds);
     const pageScreenshotPath = `.././screenshots/${randomUUID()}.jpeg`;
-    await captureScreenshot(pageScreenshotPath);
+    await captureScreenshot(pageScreenshotPath, voiceoverBounds);
     const nextRunningState =
       fromAction === "voiceover.start"
         ? true
@@ -261,21 +263,44 @@ end tell
     );
   }
 
-  async function type(text) {
-    if (typeof voiceOver.type === "function") {
-      await voiceOver.type(text);
-      return;
-    }
+  // Guidepup's voiceOver.type() builds `keystroke "<char>"` without escaping, so quotes,
+  // backslashes and newlines break the AppleScript, and it spawns one osascript per character.
+  // Type in escaped chunks instead, sending Enter/Tab as real key presses.
+  const escapeAppleScript = (value) => value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
-    const characterMap = {
-      " ": "Space",
-      "\n": "Enter",
-      "\t": "Tab",
-    };
-    for (const character of text) {
-      await new Promise((resolve) => setTimeout(resolve, 1));
-      await voiceOver.press(characterMap[character] ?? character);
+  async function keystrokeChunk(chunk) {
+    const script = `tell application "System Events" to keystroke "${escapeAppleScript(chunk)}"`;
+    await execFileAsync("/usr/bin/osascript", ["-e", script]);
+  }
+
+  async function type(text, options = {}) {
+    const pieces = String(text).split(/(\r\n|\n|\r|\t)/);
+    for (const piece of pieces) {
+      if (!piece) continue;
+      if (piece === "\t") {
+        await voiceOver.press("Tab", options);
+      } else if (/^(\r\n|\n|\r)$/.test(piece)) {
+        await voiceOver.press("Enter", options);
+      } else {
+        for (let i = 0; i < piece.length; i += 20) {
+          await keystrokeChunk(piece.slice(i, i + 20));
+        }
+      }
     }
+  }
+
+  // What the focused field now contains, so the agent can confirm the text actually landed.
+  async function typedFieldValue() {
+    const page = getPage();
+    if (!page) return null;
+    return page
+      .evaluate(() => {
+        const el = document.activeElement;
+        if (!el || el === document.body) return null;
+        const value = "value" in el ? el.value : el.isContentEditable ? el.textContent : null;
+        return value == null ? null : { tag: el.tagName.toLowerCase(), value: String(value).slice(0, 500) };
+      })
+      .catch(() => null);
   }
 
   async function start({ mode = "agent" } = {}) {
@@ -393,7 +418,9 @@ end tell
       action("voiceover.escape", (options) =>
         voiceOver.perform(voiceOver.commanderCommands.ESCAPE, options),
       ),
-    type: (text) =>
-      action("voiceover.type", (options) => type(text, options), text),
+    type: async (text) => {
+      await action("voiceover.type", (options) => type(text, options), text);
+      return typedFieldValue();
+    },
   };
 }

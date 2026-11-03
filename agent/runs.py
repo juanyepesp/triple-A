@@ -2,6 +2,8 @@
 
 Each run directory contains:
   meta.json    task info + status (running / done / failed / aborted) + path of the recording
+  transcript.md  readable log of every step: LLM inputs/outputs (the agent's "thoughts"), tool calls, evaluations
+  trace.jsonl    the same step data, machine readable (llm calls + node updates; no full states)
 Step events (llm / update / state) are written to the guidecore recording JSONL as
 {"type": "agent.<kind>", "run_id", "step", "node", "data"}, next to the browser/voiceover
 interactions. events.jsonl is only a fallback when no recording is reachable.
@@ -63,7 +65,14 @@ class Run:
         }
         self._events = None
         self._sink = None
+        self._seen_system: set[str] = set()
         self.set_status("running")
+        self.meta["transcript"] = str(self.dir / "transcript.md")
+        self.meta["trace"] = str(self.dir / "trace.jsonl")
+        (self.dir / "transcript.md").write_text(
+            f"# {self.run_id}\n\n- Goal: {task['goal']}\n- URL: {task['url']}\n- Impairment: {task['impairment']}\n"
+            f"- Started: {self.meta['started']}\n"
+        )
 
     def attach_recording(self, path: str, sink) -> None:
         """Send step events to the guidecore recording (same file as human/agent actions)."""
@@ -78,7 +87,53 @@ class Run:
         self.dir.mkdir(parents=True, exist_ok=True)
         (self.dir / "meta.json").write_text(json.dumps(self.meta, indent=2))
 
+    def trace(self, step: int, kind: str, node: str | None, data) -> None:
+        """Always-on local log of llm calls and node updates, independent of the recording."""
+        data = to_jsonable(data)
+        ts = datetime.now().isoformat(timespec="seconds")
+        with open(self.dir / "trace.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"step": step, "kind": kind, "node": node, "ts": ts, "data": data}, ensure_ascii=False) + "\n")
+
+        lines = []
+        if kind == "llm":
+            m = data.get("metrics") or {}
+            lines.append(f"\n## step {step} · {node} · LLM call ({data.get('model')}) · {ts}")
+            if m:
+                lines.append(f"_{m.get('total_s')}s, {m.get('input_tokens')} in / {m.get('output_tokens')} out tokens_")
+            for msg in data["input"]:
+                if msg["role"] == "system":
+                    if node in self._seen_system:
+                        continue  # same system prompt every time; print it once per node
+                    self._seen_system.add(node)
+                lines.append(f"\n**INPUT ({msg['role']})**\n\n```text\n{msg['content']}\n```")
+            out = data["output"]
+            lines.append(f"\n**OUTPUT**\n\n```text\n{out.get('content') or '<empty>'}\n```")
+            if out.get("tool_calls"):
+                lines.append(f"\n**TOOL CALLS**\n\n```json\n{json.dumps(out['tool_calls'], indent=2, ensure_ascii=False)}\n```")
+        elif kind == "update":
+            lines.append(f"\n### step {step} · {node} · state update")
+            lines.append(f"\n```json\n{json.dumps(self._clip(data), indent=2, ensure_ascii=False)}\n```")
+        if lines:
+            with open(self.dir / "transcript.md", "a", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+
+    def trace_error(self, text: str) -> None:
+        with open(self.dir / "transcript.md", "a", encoding="utf-8") as f:
+            f.write(f"\n### Error traceback\n\n```text\n{text}\n```\n")
+
+    @classmethod
+    def _clip(cls, value, limit: int = 3000):
+        if isinstance(value, str):
+            return value if len(value) <= limit else value[:limit] + f"... [{len(value) - limit} more chars, see trace.jsonl]"
+        if isinstance(value, dict):
+            return {k: cls._clip(v, limit) for k, v in value.items()}
+        if isinstance(value, list):
+            return [cls._clip(v, limit) for v in value]
+        return value
+
     def log(self, step: int, kind: str, node: str | None, data) -> None:
+        if kind in ("llm", "update"):
+            self.trace(step, kind, node, data)
         record = {
             "step": step,
             "kind": kind,

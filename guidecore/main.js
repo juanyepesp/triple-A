@@ -58,6 +58,7 @@ const voiceOverService = createVoiceOverService({
   getPage: browserService.getPage,
   collectAccessibilityState: browserService.collectNodesFromA11yTree,
   captureScreenshot: browserService.captureScreenshot,
+  setGaze: browserService.setGaze,
 });
 
 // -----------------------------------------------------------

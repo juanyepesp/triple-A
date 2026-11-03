@@ -19,9 +19,12 @@ from state.parsers import (
     parse_daemon_snapshot,
 )
 
+import uuid
+
 from langchain_openai import ChatOpenAI
 from langchain_core.exceptions import OutputParserException
-from langgraph.prebuilt import ToolNode
+from langchain_core.messages import ToolMessage
+from langchain_core.runnables import RunnableConfig
 from pydantic import ValidationError
 
 model = ChatOpenAI(
@@ -31,23 +34,49 @@ model = ChatOpenAI(
     stream_usage=True,
 )
 
-perception_model = model.with_structured_output(
-    Perception,
-    method="function_calling",
-).with_retry(
-    retry_if_exception_type=(ValidationError, OutputParserException),
-    stop_after_attempt=3,
-    wait_exponential_jitter=False,
-)
-evaluation_model = model.with_structured_output(
-    Evaluation,
-    method="function_calling",
-).with_retry(
-    retry_if_exception_type=(ValidationError, OutputParserException),
-    stop_after_attempt=3,
-    wait_exponential_jitter=False,
-)
+perception_model = model.with_structured_output(Perception, method="function_calling")
+evaluation_model = model.with_structured_output(Evaluation, method="function_calling")
 voiceover_tools_model = model.bind_tools(voiceover_tools)
+
+FORMAT_ERRORS = (ValidationError, OutputParserException, ValueError, KeyError, TypeError)
+MAX_FORMAT_ATTEMPTS = 3
+
+
+def invoke_with_retry(runnable, messages: list, *, expect_tool_or_text: bool = False):
+    """Call an LLM; if the reply has the wrong format, ask again with a changed request.
+
+    Each retry (1) tells the model what was wrong with its previous reply, and (2) puts a unique
+    marker at the very start of the system prompt. Provider prompt caching matches on the prefix of
+    the request, so the changed first line forces a fresh, uncached request instead of replaying the
+    same one.
+    """
+    last_error: Exception | None = None
+    for attempt in range(1, MAX_FORMAT_ATTEMPTS + 1):
+        request = list(messages)
+        if attempt > 1:
+            request[0] = {
+                **request[0],
+                "content": f"[retry {attempt} · request {uuid.uuid4().hex[:12]}]\n{request[0]['content']}",
+            }
+            request.append({
+                "role": "user",
+                "content": (
+                    "Your previous reply could not be used because its format was invalid: "
+                    f"{str(last_error)[:600]}\nReply again with exactly the required format."
+                ),
+            })
+        try:
+            result = runnable.invoke(request)
+            invalid = getattr(result, "invalid_tool_calls", None)
+            if expect_tool_or_text and invalid and not getattr(result, "tool_calls", None):
+                raise ValueError(f"malformed tool call: {invalid[0].get('error') or invalid[0]}")
+            if result is None:
+                raise ValueError("empty reply")
+            return result
+        except FORMAT_ERRORS as error:
+            last_error = error
+    raise last_error
+
 
 def bootstrap(state: AgentState)-> AgentState:
     '''This node sets up the browser, the screen reader, makes sure everything works correctly'''
@@ -75,18 +104,12 @@ def snapshot(state: AgentState)-> AgentState:
     '''
     previous = state.get("snapshot")
     current = parse_daemon_snapshot(guidecore.snapshot())
-    if state.get("last_action") and state.get("messages"):
-        latest_message = state["messages"][-1]
-        if latest_message.type == "tool":
-            action = {
-                **state["last_action"],
-                "result": str(latest_message.content),
-            }
-            state["last_action"] = action
-            history = state.get("action_history", [])
-            state["action_history"] = [*history[:-1], action] if history else [action]
     state["snapshot"] = current
-    state["transition"] = build_transition(previous, current, state.get("last_action"))
+    last = state.get("last_action")
+    if last:
+        batch = [a["name"] for a in state.get("action_history", []) if a.get("decision") == last.get("decision")]
+        last = {**last, "name": " -> ".join(batch) or last["name"]}
+    state["transition"] = build_transition(previous, current, last)
     return state
 
 
@@ -142,7 +165,7 @@ def vision(state: AgentState)-> AgentState:
         return state
 
     system_prompt = load_component_prompt("vision")
-    response = model.invoke([
+    response = invoke_with_retry(model, [
         {
             "role": "system",
             "content": system_prompt,
@@ -200,7 +223,7 @@ def perception(state: AgentState)-> AgentState:
     user_input = format_perception_evidence(state)
     
 
-    result = perception_model.invoke([
+    result = invoke_with_retry(perception_model, [
         {
             "role": "system",
             "content": system_prompt,
@@ -244,7 +267,7 @@ Iteration {state["iteration"]}
 {format_perception_evidence(state)}
 """.strip()
 
-    result = evaluation_model.invoke([
+    result = invoke_with_retry(evaluation_model, [
         {
             "role": "system",
             "content": system_prompt,
@@ -302,27 +325,64 @@ Evidence:
         },
     ]
 
-    response = voiceover_tools_model.invoke(messages)
+    response = invoke_with_retry(voiceover_tools_model, messages, expect_tool_or_text=True)
     
-    if response.tool_calls:
-        tool_call = response.tool_calls[0]
-        action = {
-            "name": tool_call["name"],
-            "arguments": tool_call.get("args", {}),
-            "result": None,
-        }
-        return {
-            "messages": [response],
-            "last_action": action,
-            "action_history": [*state.get("action_history", []), action],
-        }
-
-    return {
-        "messages": [response]
-    }
+    return {"messages": [response]}
 
 # Tool Nodes
-voiceover_tool_node = ToolNode(voiceover_tools)
+MAX_ACTIONS_PER_DECISION = 4  # VoiceOver's item text log keeps the last 5 phrases, so 4 stay readable
+# Actions that change what is focused or what the page is doing: nothing may follow them unseen.
+STATE_CHANGING = {
+    "voiceover_act",
+    "voiceover_type",
+    "voiceover_escape",
+    "voiceover_go_to_web_content",
+    "voiceover_start_interacting",
+    "voiceover_stop_interacting",
+}
+TOOLS_BY_NAME = {t.name: t for t in voiceover_tools}
+
+
+def voiceover_tool_node(state: AgentState, config: RunnableConfig) -> dict:
+    """Run the decision's tool calls one after another, in the order given (never in parallel).
+
+    Stops early after a state-changing action, after a failure, or at the per-decision limit; calls
+    that were not run still get a ToolMessage saying so (the API requires one per tool call).
+    """
+    calls = state["messages"][-1].tool_calls
+    history = list(state.get("action_history", []))
+    decision_id = state["iteration"]
+    messages: list[ToolMessage] = []
+    last_action = state.get("last_action")
+    skip_reason = None
+    executed = 0
+
+    for call in calls:
+        if skip_reason is None and executed >= MAX_ACTIONS_PER_DECISION:
+            skip_reason = f"at most {MAX_ACTIONS_PER_DECISION} actions run per decision"
+        if skip_reason:
+            messages.append(ToolMessage(f"Not executed: {skip_reason}.", tool_call_id=call["id"], name=call["name"]))
+            continue
+
+        action = {"name": call["name"], "arguments": call.get("args", {}), "result": None, "decision": decision_id}
+        try:
+            result = str(TOOLS_BY_NAME[call["name"]].invoke(call.get("args", {}), config))
+        except Exception as error:
+            if executed == 0:
+                raise  # nothing ran yet: let the node's retry policy handle it
+            result = f"Error: {error!r}"
+            skip_reason = f"the previous action '{call['name']}' failed"
+        action["result"] = result
+        history.append(action)
+        last_action = action
+        executed += 1
+        messages.append(ToolMessage(result, tool_call_id=call["id"], name=call["name"]))
+        if skip_reason is None and call["name"] in STATE_CHANGING:
+            skip_reason = f"'{call['name']}' changes the page state and must be observed before acting again"
+
+    return {"messages": messages, "last_action": last_action, "action_history": history}
+
+
 
 
 def stop(state: AgentState) -> AgentState:
@@ -356,7 +416,7 @@ Actions taken:
 {state.get("action_history", [])}
     """
 
-    result = model.invoke([
+    result = invoke_with_retry(model, [
         {
             "role": "system",
             "content": system_prompt,

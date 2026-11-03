@@ -9,7 +9,6 @@ const IMPAIRMENT_NAMES = new Set([
   "deuteranopia",
   "tritanopia",
   "tunnel_vision",
-  "diabetic_retinopathy",
 ]);
 
 const COLOR_VISION_MATRICES = {
@@ -41,7 +40,7 @@ function validateImpairment(impairment) {
   const normalized = normalizeImpairment(impairment);
   if (!IMPAIRMENT_NAMES.has(normalized)) {
     throw new Error(
-      `Unsupported impairment ${impairment}. Use none, blur, low_vision, protanopia, deuteranopia, tritanopia, tunnel_vision, or diabetic_retinopathy.`,
+      `Unsupported impairment ${impairment}. Use none, blur, low_vision, protanopia, deuteranopia, tritanopia, or tunnel_vision.`,
     );
   }
   return normalized;
@@ -58,51 +57,34 @@ function colorMatrixValues(matrix) {
   ].join(" ");
 }
 
+// Overlays use backdrop-filter / gradients instead of a filter on <html>, because a filter on the
+// root turns it into the containing block of position:fixed elements (the overlay would scroll,
+// be blurred itself and be sized to the whole document instead of the viewport).
 function visionFilterStyles(impairment) {
-  const colorMatrix = COLOR_VISION_MATRICES[impairment];
-  const pageFilter = colorMatrix
-    ? "filter: url(#guidecore-vision-color-filter) !important;"
-    : impairment === "blur" || impairment === "low_vision"
-      ? "filter: blur(5px) !important;"
-      : impairment === "diabetic_retinopathy"
-        ? "filter: blur(1.5px) contrast(0.85) saturate(0.8) !important;"
-        : "";
-  const tunnelOverlay =
-    impairment === "tunnel_vision"
-      ? `
-#guidecore-vision-tunnel {
+  const overlay = (css) => `
+#guidecore-vision-overlay {
   position: fixed !important;
   inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
   z-index: 2147483647 !important;
   pointer-events: none !important;
-  background: radial-gradient(
-    ellipse 33.333% 33.333% at center,
-    transparent 0 99%,
-    black 100%
-  ) !important;
-}`
-      : impairment === "diabetic_retinopathy"
-        ? `
-#guidecore-vision-tunnel {
-  position: fixed !important;
-  inset: 0 !important;
-  z-index: 2147483647 !important;
-  pointer-events: none !important;
-  background:
-    radial-gradient(circle 70px at 22% 30%, rgba(0,0,0,0.92) 0 55%, transparent 100%),
-    radial-gradient(circle 110px at 61% 48%, rgba(0,0,0,0.9) 0 55%, transparent 100%),
-    radial-gradient(circle 55px at 80% 22%, rgba(0,0,0,0.92) 0 55%, transparent 100%),
-    radial-gradient(circle 90px at 38% 74%, rgba(0,0,0,0.9) 0 55%, transparent 100%),
-    radial-gradient(circle 45px at 87% 70%, rgba(0,0,0,0.92) 0 55%, transparent 100%),
-    radial-gradient(circle 35px at 10% 82%, rgba(0,0,0,0.9) 0 55%, transparent 100%) !important;
-}`
-        : "";
-
-  return `
-html { ${pageFilter} }
-#guidecore-vision-tunnel { display: none; }
-${tunnelOverlay}
-`;
+  display: block !important;
+  ${css}
+}`;
+  if (COLOR_VISION_MATRICES[impairment]) {
+    return "html { filter: url(#guidecore-vision-color-filter) !important; }";
+  }
+  if (impairment === "blur" || impairment === "low_vision") {
+    return overlay("backdrop-filter: blur(5px) !important; -webkit-backdrop-filter: blur(5px) !important;");
+  }
+  if (impairment === "tunnel_vision") {
+    return overlay(
+      `background: radial-gradient(ellipse 33.333vw 33.333vh at var(--gx, 50%) var(--gy, 50%), transparent 0 99%, black 100%) !important;
+  backdrop-filter: blur(2px) !important; -webkit-backdrop-filter: blur(2px) !important;`,
+    );
+  }
+  return "";
 }
 
 const LANDMARK_ROLES = new Set([
@@ -268,38 +250,60 @@ export function createBrowserService({ daemonState, commit, logger }) {
     const matrix = COLOR_VISION_MATRICES[impairment];
     await page.evaluate(
       ({ impairment, matrix, styles }) => {
-        document
-          .getElementById("guidecore-vision-filter")
-          ?.remove();
-        document
-          .getElementById("guidecore-vision-filter-defs")
-          ?.remove();
-        document
-          .getElementById("guidecore-vision-tunnel")
-          ?.remove();
+        window.__guidecoreVisionObserver?.disconnect();
+        const ids = [
+          "guidecore-vision-filter",
+          "guidecore-vision-filter-defs",
+          "guidecore-vision-overlay",
+        ];
 
-        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        svg.id = "guidecore-vision-filter-defs";
-        svg.setAttribute("aria-hidden", "true");
-        svg.style.position = "fixed";
-        svg.style.width = "0";
-        svg.style.height = "0";
-        svg.innerHTML = matrix
-          ? `<filter id="guidecore-vision-color-filter"><feColorMatrix type="matrix" values="${matrix}" /></filter>`
-          : "";
-        document.documentElement.appendChild(svg);
+        const install = () => {
+          const root = document.documentElement;
+          if (!root) return;
+          const needsOverlay = ["blur", "low_vision", "tunnel_vision"].includes(impairment);
 
-        const style = document.createElement("style");
-        style.id = "guidecore-vision-filter";
-        style.textContent = styles;
-        document.head.appendChild(style);
+          if (!document.getElementById("guidecore-vision-filter")) {
+            const style = document.createElement("style");
+            style.id = "guidecore-vision-filter";
+            style.textContent = styles;
+            root.appendChild(style);
+          }
+          if (matrix && !document.getElementById("guidecore-vision-filter-defs")) {
+            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            svg.id = "guidecore-vision-filter-defs";
+            svg.setAttribute("aria-hidden", "true");
+            svg.style.cssText = "position:fixed;width:0;height:0";
+            svg.innerHTML = `<filter id="guidecore-vision-color-filter"><feColorMatrix type="matrix" values="${matrix}" /></filter>`;
+            root.appendChild(svg);
+          }
+          if (needsOverlay && !document.getElementById("guidecore-vision-overlay")) {
+            const overlay = document.createElement("div");
+            overlay.id = "guidecore-vision-overlay";
+            overlay.setAttribute("aria-hidden", "true");
+            root.appendChild(overlay);
+            window.__guidecoreApplyGaze?.();
+          }
+        };
 
-        if (impairment === "tunnel_vision" || impairment === "diabetic_retinopathy") {
-          const overlay = document.createElement("div");
-          overlay.id = "guidecore-vision-tunnel";
-          overlay.setAttribute("aria-hidden", "true");
-          document.body.appendChild(overlay);
-        }
+        window.__guidecoreApplyGaze = () => {
+          const overlay = document.getElementById("guidecore-vision-overlay");
+          const gaze = window.__guidecoreGaze;
+          if (!overlay) return;
+          overlay.style.setProperty("--gx", gaze ? `${gaze.x}px` : "50%");
+          overlay.style.setProperty("--gy", gaze ? `${gaze.y}px` : "50%");
+        };
+
+        ids.forEach((id) => document.getElementById(id)?.remove());
+        install();
+        window.__guidecoreApplyGaze();
+        // SPAs and hydration can wipe our nodes; put them back.
+        const observer = new MutationObserver(() => {
+          if (ids.some((id) => !document.getElementById(id) && (id !== "guidecore-vision-filter-defs" || matrix) && (id !== "guidecore-vision-overlay" || ["blur", "low_vision", "tunnel_vision"].includes(impairment)))) {
+            install();
+          }
+        });
+        observer.observe(document.documentElement, { childList: true });
+        window.__guidecoreVisionObserver = observer;
       },
       {
         impairment,
@@ -359,6 +363,10 @@ export function createBrowserService({ daemonState, commit, logger }) {
           },
         );
       });
+    });
+
+    page.on("domcontentloaded", () => {
+      applyVisionFilter().catch(() => {});
     });
 
     page.on("load", async () => {
@@ -522,8 +530,52 @@ export function createBrowserService({ daemonState, commit, logger }) {
     }));
   }
 
-  async function captureScreenshot(outputPath) {
-    await daemonState.page.screenshot({ path: outputPath });
+  // The screenshot is what the vision model sees, so mark the focused element in it: the VoiceOver
+  // cursor (screen coordinates), falling back to the DOM-focused element. The marker is removed
+  // right after the capture so it never affects the page.
+  async function captureScreenshot(outputPath, voiceoverBounds = null) {
+    const page = daemonState.page;
+    const marked = await page
+      .evaluate((bounds) => {
+        const chromeHeight = window.outerHeight - window.innerHeight;
+        let rect = null;
+        if (bounds && bounds.width > 0 && bounds.height > 0) {
+          rect = {
+            x: bounds.x - window.screenX,
+            y: bounds.y - window.screenY - chromeHeight,
+            width: bounds.width,
+            height: bounds.height,
+          };
+        }
+        const inView = (r) =>
+          r && r.width > 0 && r.height > 0 &&
+          r.x + r.width > 0 && r.y + r.height > 0 && r.x < window.innerWidth && r.y < window.innerHeight;
+        if (!inView(rect)) {
+          const el = document.activeElement;
+          rect = el && el !== document.body && el !== document.documentElement
+            ? el.getBoundingClientRect()
+            : null;
+        }
+        if (!inView(rect)) return false;
+        const box = document.createElement("div");
+        box.id = "guidecore-focus-marker";
+        box.style.cssText = [
+          "position:fixed", "pointer-events:none", "z-index:2147483647", "box-sizing:border-box",
+          `left:${rect.x - 3}px`, `top:${rect.y - 3}px`,
+          `width:${rect.width + 6}px`, `height:${rect.height + 6}px`,
+          "border:3px solid #ff00ff", "outline:2px solid #ffffff", "border-radius:3px",
+        ].join(";");
+        document.documentElement.appendChild(box);
+        return true;
+      }, voiceoverBounds)
+      .catch(() => false);
+    try {
+      await page.screenshot({ path: outputPath });
+    } finally {
+      if (marked) {
+        await page.evaluate(() => document.getElementById("guidecore-focus-marker")?.remove()).catch(() => {});
+      }
+    }
   }
 
   async function ariaSnapshot() {
@@ -580,6 +632,44 @@ export function createBrowserService({ daemonState, commit, logger }) {
     };
   }
 
+  // Tunnel vision follows the user's gaze: the VoiceOver cursor (screen coordinates), falling back
+  // to the DOM-focused element, then to the page centre.
+  async function setGaze(voiceoverBounds = null) {
+    const page = daemonState.page;
+    if (!page || visionImpairment !== "tunnel_vision") {
+      return;
+    }
+    await page.evaluate((bounds) => {
+      const chromeHeight = window.outerHeight - window.innerHeight;
+      const center = (rect) => ({
+        x: rect.x + rect.width / 2,
+        y: rect.y + rect.height / 2,
+      });
+      const visible = (point) =>
+        point.x >= 0 && point.y >= 0 && point.x <= window.innerWidth && point.y <= window.innerHeight;
+
+      let gaze = null;
+      if (bounds && bounds.width > 0 && bounds.height > 0) {
+        const point = center({
+          x: bounds.x - window.screenX,
+          y: bounds.y - window.screenY - chromeHeight,
+          width: bounds.width,
+          height: bounds.height,
+        });
+        if (visible(point)) gaze = point;
+      }
+      if (!gaze) {
+        const el = document.activeElement;
+        if (el && el !== document.body && el !== document.documentElement) {
+          const point = center(el.getBoundingClientRect());
+          if (visible(point)) gaze = point;
+        }
+      }
+      window.__guidecoreGaze = gaze;
+      window.__guidecoreApplyGaze?.();
+    }, voiceoverBounds).catch(() => {});
+  }
+
   async function activeNodes() {
     const { relevantNodes } = await collectNodesFromA11yTree();
 
@@ -601,6 +691,7 @@ export function createBrowserService({ daemonState, commit, logger }) {
     ariaSnapshot,
     collectNodesFromA11yTree,
     activeNodes,
+    setGaze,
     getPage: () => daemonState.page,
   };
 }
