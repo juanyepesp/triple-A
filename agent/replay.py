@@ -2,6 +2,8 @@
   python main.py replay [run_id | task_id | recording.jsonl | folder-with-runs_log.csv]
 Add --live to also send the logged commands to the running guidecore daemon as you advance, so the
 browser and VoiceOver reproduce the run (and each result is compared with what VoiceOver said originally).
+With --review it replays every run live with no impairment, shows the agent's reasoning and ending, and saves
+your verdict (success / near_miss / ...) to results/replay_reviews.csv.
 With no argument it lists the runs of guidecore/runs/all-recordings (via its runs_log.csv).
 
 Reads only the guidecore recording (agent.llm / agent.update / agent.state events plus the VoiceOver and
@@ -14,6 +16,7 @@ import json
 import subprocess
 import time
 from collections import OrderedDict
+from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -358,9 +361,14 @@ LIVE_SKIP = ("recording.",)  # the daemon's own recording is not part of the run
 class LiveDaemon:
     """Sends a recording's logged commands to the guidecore daemon, in order, tagged source=replay."""
 
-    def __init__(self):
+    def __init__(self, impairment: str | None = None, fast: bool = False, delay: float = 0.0):
         from tools.client import GuidecoreClient
 
+        self.impairment = impairment  # replaces the recorded impairment in browser.start (e.g. "none")
+        # fast: start VoiceOver in "human" mode (no speech capture, no state/screenshot refresh) and skip the
+        # speech comparison; delay: seconds to wait after every command so the browser can be watched.
+        self.fast, self.delay = fast, delay
+        self.same = self.differs = 0  # live VoiceOver speech vs the recording, over the commands sent
         self.client = GuidecoreClient(source="replay")
         self.client.call("recording.status")  # fail early if the daemon is not running
         self.done: set[int] = set()
@@ -381,8 +389,15 @@ class LiveDaemon:
         for c in commands:
             label = f"{c['method']} {json.dumps(c['parameters']) if c.get('parameters') else ''}".strip()
             try:
-                self.client.call(c["method"], c.get("parameters") or {})
+                params = dict(c.get("parameters") or {})
+                if c["method"] == "browser.start" and self.impairment:
+                    params["impairment"] = self.impairment
+                if c["method"] == "voiceover.start" and self.fast:
+                    params["mode"] = "human"
+                self.client.call(c["method"], params)
                 console.print(f"[green]sent[/green] {label}")
+                if self.delay:
+                    time.sleep(self.delay)
             except Exception as error:
                 ok = False
                 console.print(f"[red]failed[/red] {label}: {error}")
@@ -390,10 +405,11 @@ class LiveDaemon:
         if ok:
             self.done.add(number)
         after = next((n for n in rec.order if n > number and "snapshot" in rec.steps[n].nodes), None)
-        if ok and after is not None and commands[-1]["method"].startswith("voiceover."):
+        if ok and not self.fast and after is not None and commands[-1]["method"].startswith("voiceover."):
             recorded = (((rec.state_at(after).get("snapshot") or {}).get("context") or {}).get("voiceoverFocus") or {}).get("lastSpokenPhrase")
             now = self.spoken()
             same = " ".join((recorded or "").split()) == " ".join((now or "").split())
+            self.same, self.differs = self.same + same, self.differs + (not same)
             if compact and same:
                 console.print(f"  [green]✓ same as recorded:[/green] {clip(now, 100)}")
             elif compact:
@@ -410,7 +426,7 @@ def live_commands(rec: Recording, number: int) -> list[dict]:
     return [c for c in rec.steps[number].commands if not c["method"].startswith(LIVE_SKIP)]
 
 
-def brief_step(rec: Recording, number: int) -> None:
+def brief_step(rec: Recording, number: int, chars: int = 220) -> None:
     """One or two lines for a step: the node and what its LLM said (the agent's reasoning), clipped."""
     step = rec.steps[number]
     t0 = rec.started
@@ -419,7 +435,7 @@ def brief_step(rec: Recording, number: int) -> None:
     for offset in step.llm:
         call = rec.read(offset)
         output = call["output"]
-        text = clip(output.get("content"), 220)
+        text = clip(output.get("content"), chars)
         calls = ", ".join(f"{c['name']}({json.dumps(c.get('args') or {}) if c.get('args') else ''})" for c in output.get("tool_calls") or [])
         console.print(Text.assemble(("    " + call["node"] + ": ", "cyan"), text, (("  → " + calls) if calls else "", "bold green")))
 
@@ -439,7 +455,7 @@ def show_llm(rec: Recording, steps: list[int], node: str | None = None) -> None:
         console.print("No LLM calls in " + (f"node {node!r} of " if node else "") + f"steps {steps[0]}-{steps[-1]}." if steps else "No steps.")
 
 
-def advance_live(rec: Recording, daemon: LiveDaemon, position: int, verbose: bool) -> int | None:
+def advance_live(rec: Recording, daemon: LiveDaemon, position: int, verbose: bool, chars: int = 220) -> int | None:
     """Move to the next step that has commands, summarising the steps in between, then send them.
 
     Returns the new position, or None if the recording has no more commands.
@@ -448,7 +464,7 @@ def advance_live(rec: Recording, daemon: LiveDaemon, position: int, verbose: boo
     # Steps before the command step get a short summary; the command step itself is shown below.
     stop = target if target is not None else len(rec.order)
     for i in range(position + 1, stop):
-        brief_step(rec, rec.order[i])
+        brief_step(rec, rec.order[i], chars)
     if target is None:
         return None
     number = rec.order[target]
@@ -574,3 +590,179 @@ def replay(target: str | None = None, live: bool = False) -> None:
             console.print(HELP, markup=False, style="dim")
             continue
         show_step(rec, position)
+
+
+# ---- review mode (`replay --review`): replay every archived run live without impairment, then record a verdict ----
+REVIEWS = ROOT / "results" / "replay_reviews.csv"
+REVIEW_FIELDS = [
+    "reviewed_at", "run_id", "task_id", "agent_outcome", "review_outcome", "note", "replayed_as",
+    "commands_sent", "speech_same", "speech_differs", "replay_error", "goal", "agent_summary",
+]
+REASONING_CHARS = 900
+
+# Edit this to change the choices offered at the end of every run: key -> (label, meaning).
+OUTCOMES = {
+    "1": ("success", "finished the task and the answer is right"),
+    "2": ("near_miss", "got very close (right page/section) but did not reach or read the target element"),
+    "3": ("wrong_answer", "reported it was done, but the answer is wrong or incomplete"),
+    "4": ("lost", "navigated without getting near the target"),
+    "5": ("loop", "stuck repeating the same moves"),
+    "6": ("site_barrier", "the website itself blocked it (inaccessible control, missing labels, traps, errors)"),
+    "7": ("task_issue", "the task is unclear, outdated or not doable on the site"),
+    "8": ("other", "none of the above (write why in the note)"),
+}
+
+
+def reviewed() -> set[str]:
+    if not REVIEWS.exists():
+        return set()
+    with open(REVIEWS, newline="", encoding="utf-8") as f:
+        return {r["run_id"] for r in csv.DictReader(f)}
+
+
+def save_review(row: dict) -> None:
+    REVIEWS.parent.mkdir(exist_ok=True)
+    new = not REVIEWS.exists()
+    with open(REVIEWS, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=REVIEW_FIELDS, extrasaction="ignore")
+        if new:
+            writer.writeheader()
+        writer.writerow(row)
+
+
+def stop_session(daemon: LiveDaemon) -> None:
+    # the recording drops the trailing cleanup commands, so stop explicitly
+    for method in ("voiceover.stop", "browser.stop"):
+        try:
+            daemon.client.call(method)
+        except Exception as error:
+            console.print(f"[dim]cleanup {method}: {error}[/dim]")
+
+
+def play_all(rec: Recording, daemon: LiveDaemon) -> tuple[int, str]:
+    """Send every command of the recording. Returns (commands sent, error text or '')."""
+    sent = 0
+    position = 0
+    daemon.same = daemon.differs = 0
+    try:
+        daemon.send(rec, rec.order[0], compact=True)
+        sent += len(live_commands(rec, rec.order[0]))
+        if rec.order[0] not in daemon.done:
+            return sent, "first command failed"
+        while True:
+            moved = advance_live(rec, daemon, position, False, REASONING_CHARS)
+            if moved is None:
+                return sent, ""
+            position = moved
+            sent += len(live_commands(rec, rec.order[position]))
+            if rec.order[position] not in daemon.done:
+                return sent, f"command failed at step {rec.order[position]}"
+    except KeyboardInterrupt:
+        return sent, "interrupted"
+
+
+def show_ending(rec: Recording, run: dict) -> str:
+    state = rec.state_at(rec.order[-1])
+    evaluation = state.get("evaluation") or {}
+    lines = [
+        f"Goal: {run.get('goal') or state.get('goal')}",
+        f"Agent outcome: {run.get('outcome')}  ({run.get('iterations')} iterations, {run.get('duration_s')}s)",
+    ]
+    if run.get("error"):
+        lines.append(f"Agent error: {clip(run['error'], 200)}")
+    lines.append(f"Last evaluation: {evaluation.get('progress_status', '?')}"
+                 + (" · goal_reached" if evaluation.get("goal_reached") else "") + (" · blocked" if evaluation.get("blocked") else ""))
+    for item in (evaluation.get("evidence") or [])[:4]:
+        lines.append(f"  - {clip(item, 220)}")
+    console.print(Panel(Text("\n".join(lines)), title=f"{run['run_id']}: how it ended", border_style="cyan", title_align="left"))
+    summary = state.get("final_summary") or ""
+    if summary:
+        console.print(Panel(Text(summary), title="Agent's final answer", border_style="green", title_align="left"))
+    return summary
+
+
+def show_choices() -> None:
+    for key, (label, meaning) in OUTCOMES.items():
+        console.print(f"  [bold]{key}[/bold] {label:<13} [dim]{meaning}[/dim]")
+    console.print("  [bold]t[/bold] timeline   [bold]r[/bold] replay again   [bold]s[/bold] skip (not saved)   [bold]q[/bold] quit")
+
+
+def review_all(targets: list[str] | None = None, replayed_as: str = "none", redo: bool = False, delay: float = 1.0, fast: bool = True) -> None:
+    folder = ARCHIVE_DIR
+    wanted: list[str] = []
+    for t in targets or []:
+        if Path(t).is_dir():
+            folder = Path(t)
+        else:
+            wanted.append(t)
+    runs = archive_runs(folder)
+    if wanted:
+        runs = [r for r in runs if r["run_id"] in wanted or r["task_id"] in wanted]
+    done = set() if redo else reviewed()
+    queue = [r for r in runs if r["run_id"] not in done]
+    if not queue:
+        console.print(f"Nothing to review in {folder} ({len(runs)} runs there; --redo to review reviewed ones again).")
+        return
+    try:
+        daemon = LiveDaemon(impairment=replayed_as, fast=fast, delay=delay)
+    except Exception as error:
+        console.print(f"[red]Cannot reach the guidecore daemon ({error!r}). Start it first.[/red]")
+        return
+    console.print(f"[bold]{len(queue)} runs to review[/bold], replayed with impairment '{replayed_as}', {'fast (no speech capture)' if fast else 'with speech comparison'}, {delay}s between commands. Verdicts go to {REVIEWS}.")
+
+    for n, run in enumerate(queue, 1):
+        while True:
+            console.rule(f"[{n}/{len(queue)}] {run['run_id']} · agent outcome: {run['outcome']}")
+            console.print(f"{run['url']}\n[dim]Indexing {run['path'].name} ...[/dim]")
+            rec = Recording(run["path"], run["run_id"])
+            if not rec.order:
+                console.print("No agent steps in this recording; skipping.")
+                break
+            sent, error = play_all(rec, daemon)
+            console.print(f"\n[bold]Replay finished[/bold]: {sent} commands sent" + (f" · [red]{error}[/red]" if error else "")
+                          + ("" if fast else f" · speech matched the recording {daemon.same}/{daemon.same + daemon.differs} times"))
+            summary = show_ending(rec, run)
+            console.print("[dim]The browser is left on the final page: look at it, then choose.[/dim]")
+            verdict = None
+            while verdict is None:
+                show_choices()
+                choice = input("outcome > ").strip().lower()
+                if choice in OUTCOMES:
+                    verdict = (OUTCOMES[choice][0], input("note (optional) > ").strip())
+                elif choice == "t":
+                    timeline(rec)
+                elif choice in ("r", "s", "q"):
+                    verdict = choice
+            stop_session(daemon)
+            if verdict == "r":
+                continue
+            if verdict == "q":
+                console.print("Stopped. Run the same command to continue where you left off.")
+                return
+            if verdict != "s":
+                save_review({
+                    "reviewed_at": datetime.now().isoformat(timespec="seconds"),
+                    "run_id": run["run_id"], "task_id": run["task_id"], "agent_outcome": run["outcome"],
+                    "review_outcome": verdict[0], "note": verdict[1], "replayed_as": replayed_as,
+                    "commands_sent": sent, "speech_same": daemon.same, "speech_differs": daemon.differs,
+                    "replay_error": error, "goal": run.get("goal", ""), "agent_summary": summary,
+                })
+                console.print(f"[green]Saved: {run['task_id']} → {verdict[0]}[/green]")
+            break
+    console.print("[bold]All runs reviewed.[/bold]")
+    review_summary()
+
+
+def review_summary() -> None:
+    """How your verdicts compare with the agent's own outcome."""
+    if not REVIEWS.exists():
+        return
+    with open(REVIEWS, newline="", encoding="utf-8") as f:
+        rows = list({r["run_id"]: r for r in csv.DictReader(f)}.values())
+    counts: dict[tuple[str, str], int] = {}
+    for r in rows:
+        key = (r["agent_outcome"], r["review_outcome"])
+        counts[key] = counts.get(key, 0) + 1
+    console.print(f"[bold]{len(rows)} reviewed runs[/bold]: agent outcome → your verdict")
+    for (agent, mine), count in sorted(counts.items()):
+        console.print(f"  {agent:<15} → {mine:<13} {count}")

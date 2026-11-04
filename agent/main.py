@@ -3,6 +3,8 @@
   python main.py                      interactive task picker (tasks.csv)
   python main.py run t001 t005 --step run tasks sequentially, pausing after every node
   python main.py replay [run_id|task_id|recording.jsonl] [--live]
+  python main.py replay --review [folder|task_id ...] [--as-impairment none] [--redo]
+                                      replay every archived run live (no impairment), then record your verdict
                                       step through a saved run: agent outputs, state and VoiceOver commands
   python main.py batch [ids] [--impairment tunnel_vision] [--retry timeout error] [--from t011] [--limit N]
                                       run many tasks unattended (same live output), logging each
@@ -23,7 +25,7 @@ from rich.table import Table
 from rich.text import Text
 
 from render import render_active_node, show_llm_calls, show_state
-from replay import replay
+from replay import replay, review_all
 import runlog
 from state.parsers import consecutive_repeats
 from runs import Run, latest_status, load_tasks, to_jsonable
@@ -375,13 +377,22 @@ def main() -> None:
     parser.add_argument("--retry", nargs="*", metavar="OUTCOME", help="batch: re-run logged runs with these outcomes")
     parser.add_argument("--from", dest="start_from", metavar="TASK_ID", help="batch: re-run this task and all later ones, ignoring the log")
     parser.add_argument("--live", action="store_true", help="replay: also send the recorded commands to the running daemon")
+    parser.add_argument("--review", action="store_true", help="replay: run every archived run live without impairment and record your verdict")
+    parser.add_argument("--as-impairment", default="none", help="review: impairment to replay with (default none)")
+    parser.add_argument("--redo", action="store_true", help="review: also review runs that already have a verdict")
+    parser.add_argument("--delay", type=float, default=1.0, help="review: seconds to wait after each command (default 1)")
+    parser.add_argument("--compare-speech", action="store_true", help="review: capture VoiceOver speech and compare it with the recording (slower)")
     parser.add_argument("--limit", type=int, help="batch: run at most N runs")
     parser.add_argument("--max-iterations", type=int, default=DEFAULT_MAX_ITERATIONS)
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_S, help="seconds per run")
-    args = parser.parse_args()
+    args = parser.parse_intermixed_args()
 
     if args.command == "summary":
         runlog.summary()
+        return
+
+    if args.command == "replay" and args.review:
+        review_all(args.ids, replayed_as=args.as_impairment, redo=args.redo, delay=args.delay, fast=not args.compare_speech)
         return
 
     if args.command in ("replay", "inspect"):
