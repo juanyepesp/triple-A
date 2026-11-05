@@ -1,36 +1,99 @@
 from langgraph.graph import StateGraph, START, END
+from langgraph.types import RetryPolicy
+
 from state.schema import AgentState
-from graph.nodes import bootstrap, snapshot, perception, evaluation, decision, action, report, stop
+
+from graph.nodes import (
+    bootstrap,
+    snapshot,
+    vision,
+    perception,
+    evaluation,
+    decision,
+    voiceover_tool_node,
+    report,
+    stop,
+)
+
+from graph.edges import (
+    route_after_evaluation,
+    route_to_tools,
+)
+
 
 def build_graph():
     graph = StateGraph(AgentState)
+    retry_policy = RetryPolicy(
+        initial_interval=0.5,
+        backoff_factor=2.0,
+        max_interval=4.0,
+        max_attempts=3,
+        retry_on=Exception,
+    )
 
-    graph.add_node("node_bootstrap", lambda state: bootstrap(state))
-    graph.add_node("node_snapshot", lambda state: snapshot(state))
-    graph.add_node("node_perception", lambda state: perception(state))
-    graph.add_node("node_evaluation", lambda state: evaluation(state))
-    graph.add_node("node_decision", lambda state: decision(state))
-    graph.add_node("node_action", lambda state: action(state))
-    graph.add_node("node_report", lambda state: report(state))
-    graph.add_node("node_stop", lambda state: stop(state))
+    # ---------------------------
+    # Nodes
+    # ---------------------------
 
-    graph.add_edge(START, "node_bootstrap")
-    graph.add_edge("node_bootstrap", "node_snapshot")
-    graph.add_edge("node_snapshot", "node_perception")
-    graph.add_edge("node_perception", "node_evaluation")
+    graph.add_node("bootstrap", bootstrap, retry_policy=retry_policy)
+    graph.add_node("snapshot", snapshot, retry_policy=retry_policy)
+    graph.add_node("vision", vision, retry_policy=retry_policy)
+    graph.add_node("perception", perception, retry_policy=retry_policy)
+    graph.add_node("evaluation", evaluation, retry_policy=retry_policy)
+    graph.add_node("decision", decision, retry_policy=retry_policy)
+
+    graph.add_node(
+        "voiceover_tools",
+        voiceover_tool_node,
+        retry_policy=retry_policy,
+    )
+
+    graph.add_node("report", report, retry_policy=retry_policy)
+    graph.add_node("stop", stop, retry_policy=retry_policy)
+
+    # ---------------------------
+    # Initial flow
+    # ---------------------------
+
+    graph.add_edge(START, "bootstrap")
+    graph.add_edge("bootstrap", "snapshot")
+    graph.add_edge("snapshot", "vision")
+    graph.add_edge("vision", "perception")
+    graph.add_edge("perception", "evaluation")
+
+    # ---------------------------
+    # Evaluation
+    # ---------------------------
 
     graph.add_conditional_edges(
-        "node_evaluation",
-        lambda state: "decide_actions" if not state["evaluation"]["goal_reached"] else "report",
+        "evaluation",
+        route_after_evaluation,
         {
-            "decide_actions": "node_decision",
-            "report": "node_report",
+            "report": "report",
+            "decision": "decision",
         },
     )
 
-    graph.add_edge("node_decision", "node_action")
-    graph.add_edge("node_action", "node_snapshot")
-    graph.add_edge("node_report", "node_stop")
-    graph.add_edge("node_stop", END)
+    # ---------------------------
+    # ToolNodes
+    # ---------------------------
+
+    graph.add_conditional_edges(
+        "decision",
+        route_to_tools,
+        {
+            "voiceover_tools": "voiceover_tools",
+            "done": "snapshot",
+        },
+    )
+
+    graph.add_edge("voiceover_tools", "snapshot")
+
+    # ---------------------------
+    # Finish
+    # ---------------------------
+
+    graph.add_edge("report", "stop")
+    graph.add_edge("stop", END)
 
     return graph.compile()

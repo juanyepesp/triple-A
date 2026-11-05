@@ -1,24 +1,39 @@
 from __future__ import annotations
 
-from typing import Any, Callable
-from .client import GuidepupClient
+from typing import Any
+from .client import GuidecoreClient
 
-client = GuidepupClient()
+client = GuidecoreClient()
 
 def snapshot() -> dict[str, Any]:
     return client.call("daemonstate.snapshot")
 
-def browser_start(url: str) -> Any:
-    return client.call("browser.start", {"url": url})
+def browser_start(url: str, impairment: str = "none") -> Any:
+    return client.call("browser.start", {"url": url, "impairment": impairment})
 
 def browser_stop() -> Any:
     return client.call("browser.stop")
+
+def recording_status() -> Any:
+    return client.call("recording.status")
+
+def recording_start(url: str, impairment: str) -> Any:
+    return client.call(
+        "recording.start",
+        {"url": url, "impairment": impairment},
+    )
+
+def recording_stop() -> Any:
+    return client.call("recording.stop")
 
 def voiceover_start() -> Any:
     return client.call("voiceover.start")
 
 def voiceover_go_to_web_content() -> Any:
     return client.call("voiceover.goToWebContent")
+
+def voiceover_act() -> Any:
+    return client.call("voiceover.act")
 
 def voiceover_stop() -> Any:
     return client.call("voiceover.stop")
@@ -29,6 +44,24 @@ def voiceover_next() -> Any:
 def voiceover_previous() -> Any:
     return client.call("voiceover.previous")
 
+def voiceover_next_heading() -> Any:
+    return client.call("voiceover.nextHeading")
+
+def voiceover_previous_heading() -> Any:
+    return client.call("voiceover.previousHeading")
+
+def voiceover_next_landmark() -> Any:
+    return client.call("voiceover.nextLandmark")
+
+def voiceover_previous_landmark() -> Any:
+    return client.call("voiceover.previousLandmark")
+
+def voiceover_next_link() -> Any:
+    return client.call("voiceover.nextLink")
+
+def voiceover_previous_link() -> Any:
+    return client.call("voiceover.previousLink")
+
 def voiceover_start_interacting() -> Any:
     return client.call("voiceover.startInteracting")
 
@@ -38,54 +71,5 @@ def voiceover_stop_interacting() -> Any:
 def voiceover_escape() -> Any:
     return client.call("voiceover.escape")
 
-def voiceover_press(key: str) -> Any:
-    return client.call("voiceover.press", {"key": key})
-
-def voiceover_rotor_open() -> Any:
-    return client.call("voiceover.rotor.open")
-
-def voiceover_rotor_next_category() -> Any:
-    return client.call("voiceover.rotor.nextCategory")
-
-def voiceover_rotor_previous_category() -> Any:
-    return client.call("voiceover.rotor.previousCategory")
-
-def voiceover_rotor_next_item() -> Any:
-    return client.call("voiceover.rotor.nextItem")
-
-def voiceover_rotor_previous_item() -> Any:
-    return client.call("voiceover.rotor.previousItem")
-
-def voiceover_rotor_find( text: str) -> Any:
-    return client.call("voiceover.rotor.find", {"text": text})
-
-def voiceover_rotor_activate() -> Any:
-    return client.call("voiceover.rotor.activate")
-
-
-ACTION_REGISTRY = {
-    "voiceover.next": voiceover_next,
-    "voiceover.previous": voiceover_previous,
-    "voiceover.startInteracting": voiceover_start_interacting,
-    "voiceover.stopInteracting": voiceover_stop_interacting,
-    "voiceover.escape": voiceover_escape,
-
-    "voiceover.rotor.open": voiceover_rotor_open,
-    "voiceover.rotor.nextCategory": voiceover_rotor_next_category,
-    "voiceover.rotor.previousCategory": voiceover_rotor_previous_category,
-    "voiceover.rotor.nextItem": voiceover_rotor_next_item,
-    "voiceover.rotor.previousItem": voiceover_rotor_previous_item,
-    "voiceover.rotor.activate": voiceover_rotor_activate,
-}
-
-
-def execute(action: dict):
-
-    name = action["name"]
-
-    if name not in ACTION_REGISTRY:
-        raise ValueError(f"Unknown action: {name}")
-
-    fn = ACTION_REGISTRY[name]
-
-    return fn(**action.get("params", {}))
+def voiceover_type(text: str) -> Any:
+    return client.call("voiceover.type", {"text": text})

@@ -1,0 +1,426 @@
+import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { promisify } from "node:util";
+import {
+  MacOSKeyCodes,
+  MacOSModifiers,
+  voiceOver,
+} from "@guidepup/guidepup";
+
+const execFileAsync = promisify(execFile);
+
+function parseCursorBounds(value) {
+  const numbers = String(value)
+    .match(/-?\d+(?:\.\d+)?/g)
+    ?.map(Number);
+
+  if (!numbers || numbers.length < 4) {
+    return null;
+  }
+
+  const [left, top, right, bottom] = numbers;
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+    coordinateSpace: "screen",
+  };
+}
+
+function normalizeText(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function containsCue(text, cue) {
+  return cue.includes(" ")
+    ? text.includes(cue)
+    : new RegExp(`\\b${cue}\\b`).test(text);
+}
+
+function resolveWebContentScope(
+  currentValue,
+  lastSpokenPhrase,
+  itemTextLog = [],
+) {
+  const outsideCues = [
+    "google chrome",
+    "chrome",
+    "tab",
+    "toolbar",
+    "address bar",
+    "address and search bar",
+    "bookmarks bar",
+    "window",
+    "menu bar",
+    "dock",
+    "desktop",
+  ];
+  const insideCues = [
+    "web content",
+    "webpage",
+    "web page",
+    "heading",
+    "link",
+    "button",
+    "checkbox",
+    "combobox",
+    "textbox",
+    "search field",
+    "form",
+    "landmark",
+    "banner",
+    "navigation",
+    "main",
+    "contentinfo",
+    "group",
+    "paragraph",
+    "article",
+    "image",
+    "table",
+    "list",
+  ];
+
+  const observations = [
+    lastSpokenPhrase,
+    ...(Array.isArray(itemTextLog) ? itemTextLog.slice(-1) : []),
+  ]
+    .map(normalizeText)
+    .filter(Boolean);
+
+  if (
+    observations.some((text) =>
+      outsideCues.some((cue) => containsCue(text, cue)),
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    observations.some((text) =>
+      insideCues.some((cue) => containsCue(text, cue)),
+    )
+  ) {
+    return false;
+  }
+
+  return currentValue;
+}
+
+function textSimilarity(browserFocus, lastSpokenPhrase) {
+  const focusText = normalizeText(browserFocus?.name);
+  if (!focusText) {
+    return 0;
+  }
+
+  const spokenText = normalizeText(lastSpokenPhrase);
+
+  if (!spokenText) {
+    return 0;
+  }
+
+  if (spokenText.includes(focusText)) {
+    return 1;
+  }
+
+  const focusWords = new Set(focusText.split(" "));
+  const spokenWords = new Set(spokenText.split(" "));
+  const overlap = [...focusWords].filter((word) => spokenWords.has(word)).length;
+  return overlap / Math.max(focusWords.size, spokenWords.size);
+}
+
+function dimensionSimilarity(browserFocus, voiceoverBounds) {
+  const first = browserFocus?.bounds;
+  const second = voiceoverBounds;
+  if (!first || !second) {
+    return 0;
+  }
+
+  const widthSimilarity =
+    Math.min(first.width, second.width) / Math.max(first.width, second.width);
+  const heightSimilarity =
+    Math.min(first.height, second.height) /
+    Math.max(first.height, second.height);
+  return (widthSimilarity + heightSimilarity) / 2;
+}
+
+function compareFocus(browserFocus, voiceoverBounds, lastSpokenPhrase) {
+  const textScore = textSimilarity(browserFocus, lastSpokenPhrase);
+  const roleMatches = Boolean(
+    browserFocus?.role &&
+      normalizeText(lastSpokenPhrase).startsWith(normalizeText(browserFocus.role)),
+  );
+  const dimensionsScore = dimensionSimilarity(browserFocus, voiceoverBounds);
+  const similarityScore =
+    textScore * 0.6 + (roleMatches ? 0.05 : 0) + dimensionsScore * 0.35; // ? heurisitically chosen.
+
+  return {
+    VOCursorBrowserFocusAreSimilarEnough: similarityScore >= 0.9,
+    similarityScore,
+    textSimilarity: [textScore, lastSpokenPhrase],
+    roleMatches,
+    dimensionsSimilarity: dimensionsScore,
+  };
+}
+
+export function createVoiceOverService({
+  daemonState,
+  commit,
+  getPage,
+  collectAccessibilityState,
+  captureScreenshot,
+  setGaze,
+}) {
+  let sessionOptions = { capture: true, refresh: true };
+
+  async function getCursorBounds() {
+    const script = `
+tell application "VoiceOver"
+    return bounds of vo cursor
+end tell
+`;
+    const { stdout } = await execFileAsync("/usr/bin/osascript", [
+      "-e",
+      script,
+    ]);
+    return parseCursorBounds(stdout.trim());
+  }
+
+  async function refreshState(fromAction, parameters = null) {
+    const page = getPage();
+
+    if (!page) {
+      throw new Error(
+        `Cannot refresh VoiceOver state for ${fromAction}: no browser page is active`,
+      );
+    }
+
+    const lastSpokenPhrase = await voiceOver
+      .lastSpokenPhrase()
+      .catch(() => null);
+    const itemTextLog = (await voiceOver.itemTextLog().catch(() => [])).slice(-5);
+    const accessibilityState = await collectAccessibilityState();
+    const voiceoverBounds = await getCursorBounds().catch(() => null);
+    await setGaze?.(voiceoverBounds);
+    const pageScreenshotPath = `.././screenshots/${randomUUID()}.jpeg`;
+    await captureScreenshot(pageScreenshotPath, voiceoverBounds);
+    const nextRunningState =
+      fromAction === "voiceover.start"
+        ? true
+        : fromAction === "voiceover.stop"
+          ? false
+          : daemonState.context.voiceover.running;
+    const isOutsideWebContent = resolveWebContentScope(
+      daemonState.context.voiceoverFocus.isOutsideWebContent,
+      lastSpokenPhrase,
+      itemTextLog,
+    );
+
+    commit(
+      {
+        context: {
+          page: {
+            ...daemonState.context.page,
+            screenshotPath: pageScreenshotPath,
+          },
+          a11y: {
+            tree: accessibilityState.tree,
+          },
+          relevantNodes: accessibilityState.relevantNodes,
+          browserFocus: accessibilityState.browserFocus,
+          cursorPath: accessibilityState.cursorPath,
+          voiceoverFocus: {
+            bounds: voiceoverBounds,
+            lastSpokenPhrase,
+            isOutsideWebContent,
+            itemTextLog,
+          },
+          focusComparison: {
+            ...compareFocus(
+              accessibilityState.browserFocus,
+              voiceoverBounds,
+              lastSpokenPhrase,
+            ),
+          },
+          voiceover: {
+            ...daemonState.context.voiceover,
+            running: nextRunningState,
+            lastSpokenPhrase,
+          },
+        },
+      },
+      {
+        fromAction,
+        parameters,
+        voiceoverCursor: {
+          speech: lastSpokenPhrase,
+          itemTextLog,
+        },
+      },
+    );
+  }
+
+  // Guidepup's voiceOver.type() builds `keystroke "<char>"` without escaping, so quotes,
+  // backslashes and newlines break the AppleScript, and it spawns one osascript per character.
+  // Type in escaped chunks instead, sending Enter/Tab as real key presses.
+  const escapeAppleScript = (value) => value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
+  async function keystrokeChunk(chunk) {
+    const script = `tell application "System Events" to keystroke "${escapeAppleScript(chunk)}"`;
+    await execFileAsync("/usr/bin/osascript", ["-e", script]);
+  }
+
+  async function type(text, options = {}) {
+    const pieces = String(text).split(/(\r\n|\n|\r|\t)/);
+    for (const piece of pieces) {
+      if (!piece) continue;
+      if (piece === "\t") {
+        await voiceOver.press("Tab", options);
+      } else if (/^(\r\n|\n|\r)$/.test(piece)) {
+        await voiceOver.press("Enter", options);
+      } else {
+        for (let i = 0; i < piece.length; i += 20) {
+          await keystrokeChunk(piece.slice(i, i + 20));
+        }
+      }
+    }
+  }
+
+  // What the focused field now contains, so the agent can confirm the text actually landed.
+  async function typedFieldValue() {
+    const page = getPage();
+    if (!page) return null;
+    return page
+      .evaluate(() => {
+        const el = document.activeElement;
+        if (!el || el === document.body) return null;
+        const value = "value" in el ? el.value : el.isContentEditable ? el.textContent : null;
+        return value == null ? null : { tag: el.tagName.toLowerCase(), value: String(value).slice(0, 500) };
+      })
+      .catch(() => null);
+  }
+
+  async function start({ mode = "agent" } = {}) {
+    if (mode !== "agent" && mode !== "human") {
+      throw new Error(`Unsupported VoiceOver mode: ${mode}`);
+    }
+    sessionOptions =
+      mode === "human"
+        ? { capture: false, refresh: false }
+        : { capture: true, refresh: true };
+    await voiceOver.start({
+      capture: sessionOptions.capture,
+      retries: 3,
+      timeout: 10000,
+    });
+    await voiceOver.clearItemTextLog();
+    await voiceOver.clearSpokenPhraseLog();
+    if (sessionOptions.refresh) {
+      await refreshState("voiceover.start");
+    } else {
+      commit({ context: { voiceover: { running: true } } }, {
+        fromAction: "voiceover.start",
+        mode,
+      });
+    }
+  }
+
+  async function goToWebContent() {
+    await voiceOver.perform(voiceOver.commanderCommands.GO_TO_TOP_OF_WINDOW);
+    await voiceOver.perform(voiceOver.commanderCommands.GO_TO_BOTTOM_OF_WINDOW);
+    await refreshState("voiceover.goToWebContent");
+  }
+
+  async function stop() {
+    await voiceOver.stop();
+    if (sessionOptions.refresh) {
+      await refreshState("voiceover.stop");
+    } else {
+      commit({ context: { voiceover: { running: false } } }, {
+        fromAction: "voiceover.stop",
+      });
+    }
+  }
+
+  async function shutdown() {
+    await voiceOver.stop();
+  }
+
+  async function action(
+    name,
+    operation,
+    parameter,
+    options = sessionOptions,
+  ) {
+    const { capture, refresh } = { ...sessionOptions, ...options };
+    await operation({ capture });
+    if (refresh) {
+      await refreshState(name, parameter);
+    }
+  }
+
+  return {
+    getCursorBounds,
+    start,
+    goToWebContent,
+    stop,
+    shutdown,
+    next: () =>
+      action("voiceover.next", (options) => voiceOver.next(options)),
+    previous: () =>
+      action("voiceover.previous", (options) => voiceOver.previous(options)),
+    nextHeading: () =>
+      action("voiceover.nextHeading", (options) => voiceOver.nextHeading(options)),
+    previousHeading: () =>
+      action("voiceover.previousHeading", (options) => voiceOver.previousHeading(options)),
+    nextLandmark: () =>
+      action("voiceover.nextLandmark", (options) => voiceOver.nextLandmark(options)),
+    previousLandmark: () =>
+      action("voiceover.previousLandmark", (options) => voiceOver.previousLandmark(options)),
+    nextLink: () =>
+      action("voiceover.nextLink", (options) => voiceOver.nextLink(options)),
+    previousLink: () =>
+      action("voiceover.previousLink", (options) => voiceOver.previousLink(options)),
+    startInteracting: () =>
+      action("voiceover.startInteracting", (options) =>
+        voiceOver.perform(
+          voiceOver.commanderCommands.START_INTERACTING_WITH_ITEM,
+          options,
+        ),
+      ),
+    stopInteracting: () =>
+      action("voiceover.stopInteracting", (options) =>
+        voiceOver.stopInteracting(options),
+      ),
+    act: () =>
+      action("voiceover.act", (options) => voiceOver.act(options)),
+    perform: (command) =>
+      action(
+        "voiceover.perform",
+        (options) => {
+          const keyboardCommand = voiceOver.keyboardCommands[command];
+          const commanderCommand = voiceOver.commanderCommands[command];
+
+          if (keyboardCommand) {
+            return voiceOver.perform(keyboardCommand, options);
+          }
+          if (commanderCommand) {
+            return voiceOver.perform(commanderCommand, options);
+          }
+          throw new Error(`Unsupported VoiceOver command: ${command}`);
+        },
+        command,
+      ),
+    escape: () =>
+      action("voiceover.escape", (options) =>
+        voiceOver.perform(voiceOver.commanderCommands.ESCAPE, options),
+      ),
+    type: async (text) => {
+      await action("voiceover.type", (options) => type(text, options), text);
+      return typedFieldValue();
+    },
+  };
+}

@@ -6,5 +6,12 @@
 **/__pycache__
 .DS_Store
 */venv
+guidecore/scripts/venv
 */logs
 out.txt
+*/vision_outputs/
+agent/runs/
+agent/graph.png
+guidecore/runs/
+notebooks/data
+notebooks/data/JSONL files
