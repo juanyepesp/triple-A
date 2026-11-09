@@ -3,7 +3,6 @@
 <!-- A multimodal accessibility agent that uses a screen reader to navigate a website. -->
 
 <!-- TODO maybe add a logo or more branding -->
-<!-- TODO explicar que hace cada cosa, que guidecore es el sistema principal -->
 
 ## Prerequisites
 
@@ -56,9 +55,17 @@ npm start
 
 This starts the RPC server at `/tmp/guidecore.sock`.
 
-### Control VoiceOver remotely
+**Terminal 2: start the client, for example the autonomous agent**
 
-When using a VM or SSH, the keyboard helper can translate ordinary keyboard input into GuideCore VoiceOver commands. It does not require pressing the VoiceOver `Control+Option` modifier:
+```zsh
+cd agent
+source venv/bin/activate
+python main.py
+```
+
+### Human Tester instructions
+
+The keyboard helper can translate ordinary keyboard input into GuideCore VoiceOver commands. It does not require pressing the VoiceOver `Control+Option` modifier:
 
 ```zsh
 cd guidecore
@@ -80,27 +87,6 @@ The helper starts the GuideCore browser and VoiceOver instances, then maps:
 - `w` to return to web content
 - `e` or `Escape` to escape the current VoiceOver context
 - `t` to enter text for `voiceover.type`
-
-Commands are sent through the existing GuideCore Unix socket, so Guidepup executes them in the VM. Use `--debug-keys` to inspect the keys received by the VM. Press `Ctrl+C` to stop VoiceOver and the browser.
-
-```zsh
-python scripts/recorder.py \
-  --url "https://example.com" \
-  --impairment low_vision \
-  --debug-keys
-```
-
-If an arrow combination does not execute, inspect the sequence printed by `--debug-keys`; terminal emulators can use different Shift+arrow sequences.
-
-**Terminal 2: start the Python agent**
-
-```zsh
-cd agent
-source venv/bin/activate
-python main.py
-```
-
-Vision inspection reports are written as self-contained HTML files under `agent/vision_outputs/`. Each report contains the exact rendered screenshot sent to the model, the selected impairment, the screenshot hash, and the model's description. The latest report path is also stored in the agent's `vision` state as `report_path`.
 
 ## Recommendations
 
