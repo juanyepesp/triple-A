@@ -15,3 +15,4 @@ agent/graph.png
 guidecore/runs/
 notebooks/data
 notebooks/data/JSONL files/watch.sh
+watch.sh
