@@ -79,7 +79,6 @@ class Perception(BaseModel):
         )
     )
     
-    # TODO revisar si tiene sentido incluir este campo, porque a veces se inventa cosas
     element_interactions: list[str] = Field(
         description=(
             "A list of the available action from the element,"
@@ -94,7 +93,6 @@ class Perception(BaseModel):
             "List important observations that may influence future reasoning. "
         ),
     )
-    # TODO include a field like intuition. "I think if we approach this or that element..."
     current_element: Optional[dict[str, Any]] = None
     current_role: Optional[str] = None
     browser_focus: Optional[dict[str, Any]] = None
@@ -102,7 +100,6 @@ class Perception(BaseModel):
     confidence: Literal["high", "medium", "low"] = "low"
 
 
-# TODO maybe combine perception and evaluation
 
 class Evaluation(BaseModel):
     """
@@ -164,7 +161,7 @@ class RelevantNodes(TypedDict):
         ...,
         (
             "Any element in the website that was pressed."
-            "Think of buttons, checkmarks, etc." #TODO check for preciseness
+            "Think of buttons, checkmarks, etc." 
         ),
     ]
     landmarks: list[dict[str, Any]]
@@ -318,7 +315,7 @@ class AgentState(TypedDict):
     """
     Final State passed through each node
     """
-    messages: Annotated[Sequence[BaseMessage], add_messages] # TODO needs to be reset every once in a while
+    messages: Annotated[Sequence[BaseMessage], add_messages]
     goal: str # The ultimate goal to reach. "Go to this marketplace site and find the about us page, summarize the page."
     initial_URL: str
     snapshot: DaemonSnapshot # All that comes from Guidepup
